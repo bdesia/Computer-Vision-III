@@ -1,106 +1,110 @@
-# SliceGAN con discriminador Vision Transformer y front-end SAM
+# SliceGAN with a Vision Transformer discriminator and a SAM front-end
 
-Trabajo final — **Vision Transformers (FIUBA)**. Docentes: Abraham Rodriguez, Oksana Bokhonok.
-Trabajo individual.
+Final project — **Vision Transformers (FIUBA)**. Instructors: Abraham Rodriguez, Oksana Bokhonok.
+Individual work.
 
-## Objetivo
+## Goal
 
-Generar volúmenes 3D (64³) estadísticamente equivalentes a una micrografía 2D de un material
-bifásico e isotrópico usando **SliceGAN**, y medir:
+Generate 3D volumes (64³) that are statistically equivalent to a 2D micrograph of a two-phase,
+isotropic material using **SliceGAN**, and measure:
 
-1. si un **discriminador Swin-T** (Vision Transformer jerárquico) mejora al discriminador CNN original, y
-2. si usar **SAM** como front-end de segmentación de fases mejora los descriptores del volumen
-   generado (fracción de fase `φ` y correlación de dos puntos `S₂`).
+1. whether a **Swin-T discriminator** (hierarchical Vision Transformer) improves on the original CNN
+   discriminator, and
+2. whether using **SAM** as a phase-segmentation front-end improves the descriptors of the generated
+   volume (phase fraction `φ` and two-point correlation `S₂`).
 
-| ID | Modelo | Entrada 2D | Generador 3D | Discriminador 2D |
-|----|--------|------------|--------------|------------------|
-| M1 | SliceGAN baseline | imagen de entrenamiento | CNN 3D SliceGAN | CNN SliceGAN |
-| M2 | SliceGAN–Swin | la misma que M1 | el mismo G | Swin-T (Hugging Face) |
-| M3 | SliceGAN–Swin+SAM | mapa de fases de SAM | el mismo G | el mismo Swin-T que M2 |
+| ID | Model | 2D input | 3D generator | 2D discriminator |
+|----|-------|----------|--------------|------------------|
+| M1 | SliceGAN baseline | training image | SliceGAN 3D CNN | SliceGAN CNN |
+| M2 | SliceGAN–Swin | same as M1 | same G | Swin-T (Hugging Face) |
+| M3 | SliceGAN–Swin+SAM | SAM phase map | same G | same Swin-T as M2 |
 
-- M1 vs M2: ¿aporta el ViT en el discriminador?
-- M2 vs M3: ¿aporta SAM como preprocesamiento?
+- M1 vs M2: does the ViT discriminator help?
+- M2 vs M3: does SAM preprocessing help?
 
-## Estructura
+## Layout
 
 ```
-configs/            default.yaml + un yaml por modelo (m1_cnn, m2_swin, m3_swin_sam)
-data/               raw/ interim/ processed/ (no versionado, salvo processed/sam_gt/)
-external/SliceGAN/  SliceGAN upstream (submódulo, sin modificar)
-src/data/           make_dataset.py — descarga o genera la 2D y los crops 64x64
-src/features/       sam_segment.py (SAM zero-shot), descriptors.py (φ, S₂)
-src/models/         wrapper SliceGAN, discriminadores CNN/Swin, train.py, generate.py
-src/visualization/  figuras y tabla de métricas
+configs/            default.yaml + one yaml per model (m1_cnn, m2_swin, m3_swin_sam)
+data/               raw/ interim/ processed/ (not versioned, except processed/sam_gt/)
+external/SliceGAN/  upstream SliceGAN (git submodule, unmodified)
+src/data/           make_dataset.py — downloads or generates the 2D image and 64x64 crops
+src/features/       sam_segment.py (zero-shot SAM), descriptors.py (φ, S₂)
+src/models/         SliceGAN wrapper, CNN/Swin discriminators, train.py, generate.py
+src/visualization/  figures and metrics table
 tests/              pytest
-reports/            informe.md (fuente del PDF), figures/, metrics.csv
-models/             checkpoints (no versionados)
-logs/               logs de cada corrida
+reports/            report.md (PDF source), figures/, metrics.csv
+models/             checkpoints (not versioned)
+logs/               per-run logs
 ```
 
 ## Setup
 
-Requiere Python ≥ 3.10. GPU NVIDIA recomendada (probado en RTX A2000 12 GB, driver CUDA 12.2).
+Requirements: Python 3.11, [Poetry](https://python-poetry.org/) ≥ 2.0, bash (Git Bash on Windows).
+An NVIDIA GPU is recommended (tested on an RTX A2000 12 GB).
 
 ```bash
 git clone --recurse-submodules https://github.com/bdesia/Computer-Vision-III.git
 cd Computer-Vision-III
-python -m venv .venv
-# Windows: .venv\Scripts\activate    Linux/macOS: source .venv/bin/activate
-pip install -r requirements.txt
+bash setup.sh               # CUDA 12.4 build of PyTorch
+# DEVICE=cpu bash setup.sh  # CPU-only build
 ```
 
-O bien `make venv` (con GNU make; en Windows, `gmake`). Si ya clonaste sin submódulos: `make vendor`.
+`setup.sh` creates an in-project `.venv`, installs the locked dependencies (main + dev), registers a
+Jupyter kernel named `tf-vit-slicegan` and adds the repo root to the environment's `sys.path`.
+Run commands with `poetry run ...` or activate `.venv` first.
+If you cloned without submodules: `make vendor`.
 
-Sin GPU todo corre en CPU (con un WARNING en el log); en ese caso bajar `epochs` en el yaml.
+Without a GPU everything runs on CPU (a WARNING is logged); lower `epochs` in the yaml in that case.
 
-## Datos
+## Data
 
 ```bash
-python -m src.data.make_dataset --config configs/default.yaml   # make data
+poetry run python -m src.data.make_dataset --config configs/default.yaml   # make data
 ```
 
-Fuente configurada en `configs/default.yaml → data.source`:
+Source is set in `configs/default.yaml → data.source`:
 
-- `synthetic` (default actual): inclusiones circulares por RSA, `φ` objetivo 0.25, 512², seed fija.
-- `slicegan`: micrografía 2 fases de `external/SliceGAN/Examples/`. TODO: elegir archivo.
-- `microlib`: una entrada de [MicroLib](https://microlib.io). TODO: citar el ID elegido.
+- `synthetic` (current default): RSA circular inclusions, target `φ` 0.25, 512², fixed seed.
+- `slicegan`: a two-phase micrograph from `external/SliceGAN/Examples/`. TODO: pick the file.
+- `microlib`: one entry from [MicroLib](https://microlib.io). TODO: cite the chosen ID.
 
-## Entrenamiento
+## Training
 
 ```bash
-python -m src.models.train --config configs/m1_cnn.yaml       # make train-m1
-python -m src.features.sam_segment --config configs/m3_swin_sam.yaml   # make sam (requerido por M3)
-python -m src.models.train --config configs/m2_swin.yaml      # make train-m2
-python -m src.models.train --config configs/m3_swin_sam.yaml  # make train-m3
+poetry run python -m src.models.train --config configs/m1_cnn.yaml          # make train-m1
+poetry run python -m src.features.sam_segment --config configs/m3_swin_sam.yaml   # make sam (needed by M3)
+poetry run python -m src.models.train --config configs/m2_swin.yaml         # make train-m2
+poetry run python -m src.models.train --config configs/m3_swin_sam.yaml     # make train-m3
 ```
 
-Checkpoints en `models/<run_name>/`, logs en `logs/<run_name>.log`.
+Checkpoints go to `models/<run_name>/`, logs to `logs/<run_name>.log`.
 
-## Evaluación
+## Evaluation
 
 ```bash
-make eval      # genera N=4 cubos 64³ por modelo y escribe reports/metrics.csv + figuras
+make eval      # generates N=4 64³ cubes per model, writes reports/metrics.csv + figures
 make test      # pytest
 ```
 
-Métricas: `φ` media ± std y `|Δφ|` vs la 2D de entrenamiento; MAE de `S₂(r)` hasta `r = 32`
-(promedio de cortes xy/xz/yz); IoU/Dice de SAM sobre 5 crops con GT manual.
+Metrics: `φ` mean ± std and `|Δφ|` vs the 2D training image; `S₂(r)` MAE up to `r = 32`
+(averaged over xy/xz/yz slices); SAM IoU/Dice on 5 crops with manual ground truth.
 
-## Resultados
+## Results
 
-TBD — ver `reports/informe.md`.
+TBD — see `reports/report.md`.
 
-## Citas
+## References
 
 - S. Kench, S. J. Cooper. *Generating three-dimensional structures from a two-dimensional slice with
   generative adversarial network-based dimensionality expansion.* Nature Machine Intelligence, 2021.
-  Código: https://github.com/stke9/SliceGAN
+  Code: https://github.com/stke9/SliceGAN
 - Z. Liu et al. *Swin Transformer: Hierarchical Vision Transformer using Shifted Windows.* ICCV 2021.
 - A. Kirillov et al. *Segment Anything.* ICCV 2023.
 - A. Dosovitskiy et al. *An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale.* ICLR 2021.
 - S. Kench et al. *MicroLib: A library of 3D microstructures generated from 2D micrographs using
-  SliceGAN.* Scientific Data, 2022 (si se usa MicroLib).
+  SliceGAN.* Scientific Data, 2022 (if MicroLib is used).
 
-## Licencia
+## License
 
-MIT (ver `LICENSE`). SliceGAN mantiene su propia licencia.
+MIT (see `LICENSE`). SliceGAN keeps its own license.

@@ -11,10 +11,10 @@ CFG_M1 := configs/m1_cnn.yaml
 CFG_M2 := configs/m2_swin.yaml
 CFG_M3 := configs/m3_swin_sam.yaml
 
-.PHONY: help venv vendor data sam train-m1 train-m2 train-m3 generate eval test
+.PHONY: help setup vendor data sam train-m1 train-m2 train-m3 generate eval test
 
 help:
-	@echo "venv      create .venv and install pinned requirements"
+	@echo "setup     create .venv with Poetry (DEVICE=cpu for CPU torch)"
 	@echo "vendor    fetch SliceGAN into external/SliceGAN (git submodule)"
 	@echo "data      download/generate the 2D micrograph and 64x64 crops"
 	@echo "sam       SAM zero-shot phase map for M3 (+ IoU/Dice vs sam_gt)"
@@ -25,8 +25,8 @@ help:
 	@echo "eval      generate + aggregate reports/metrics.csv and figures"
 	@echo "test      run pytest"
 
-venv:
-	python -m venv .venv && $(PY) -m pip install --upgrade pip && $(PY) -m pip install -r requirements.txt
+setup:
+	bash setup.sh
 
 vendor:
 	git submodule update --init --recursive
