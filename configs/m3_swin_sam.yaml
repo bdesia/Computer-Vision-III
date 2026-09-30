@@ -1,0 +1,11 @@
+# M3 — SliceGAN-Swin+SAM: same G and Swin D as M2, trained on the SAM phase map.
+base: default.yaml
+run_name: m3_swin_sam
+
+model:
+  discriminator: swin
+
+data:
+  branch: sam
+
+batch_size: 8

@@ -1,0 +1,44 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+.env
+
+# Data (heavy / regenerable). Keep folder structure via .gitkeep.
+data/raw/*
+data/interim/*
+data/processed/*
+!data/**/.gitkeep
+!data/processed/sam_gt/
+data/processed/sam_gt/*
+!data/processed/sam_gt/*.png
+!data/processed/sam_gt/README.md
+
+# Model weights and generated volumes
+models/*
+!models/.gitkeep
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.tif
+*.tiff
+
+# Logs
+logs/*
+!logs/.gitkeep
+
+# Hugging Face cache (if redirected locally)
+.hf_cache/
+
+# OS / IDE
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

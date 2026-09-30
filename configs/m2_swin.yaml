@@ -1,0 +1,12 @@
+# M2 — SliceGAN-Swin: same data and generator as M1, Swin-T discriminator.
+base: default.yaml
+run_name: m2_swin
+
+model:
+  discriminator: swin
+
+data:
+  branch: raw
+
+# RTX A2000 12 GB fits batch 8 with 224 upsampling; use 4 on GPUs < 8 GB.
+batch_size: 8

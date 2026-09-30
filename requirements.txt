@@ -1,0 +1,24 @@
+# Pinned dependencies. CUDA 12.1 wheels for torch (driver >= 530); on CPU-only
+# machines pip falls back to the PyPI build of the same version.
+--extra-index-url https://download.pytorch.org/whl/cu121
+torch==2.5.1
+torchvision==0.20.1
+
+# Hugging Face: Swin-T discriminator + SAM ViT-B
+transformers==4.46.3
+huggingface_hub==0.26.2
+
+# Scientific stack
+numpy==1.26.4
+scipy==1.13.1
+scikit-image==0.24.0
+tifffile==2024.9.20
+Pillow==10.4.0
+matplotlib==3.9.2
+
+# Config / utilities
+PyYAML==6.0.2
+tqdm==4.66.5
+
+# Tests
+pytest==8.3.3

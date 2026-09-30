@@ -1,0 +1,71 @@
+# Base configuration shared by M1/M2/M3. Model configs override keys via `base:`.
+seed: 42
+img_size: 64            # 2D training crop size fed to D
+volume_size: 64         # generated cube edge (64^3)
+epochs: 50              # raise if GPU available; report the value actually used
+iters_per_epoch: 100    # generator updates per epoch (SliceGAN upstream default)
+batch_size: 8
+z_channels: 16
+n_phases: 2
+device: cuda            # falls back to cpu (logged as WARNING) if CUDA is unavailable
+
+paths:
+  raw: data/raw
+  interim: data/interim
+  processed: data/processed
+  models: models
+  logs: logs
+  figures: reports/figures
+  reports: reports
+  slicegan: external/SliceGAN
+
+data:
+  source: synthetic     # synthetic | slicegan | microlib
+  raw_path: data/raw/micro_2d.png
+  microlib_id: null     # fill in when source == microlib
+  branch: raw           # raw -> processed/train_2d (M1/M2) | sam -> processed/train_sam (M3)
+  train_dirs:
+    raw: data/processed/train_2d
+    sam: data/processed/train_sam
+  crop_stride: 32
+  synthetic:            # RSA circular inclusions (fallback / debug)
+    canvas: 512
+    phi_target: 0.25
+    radius_min: 6
+    radius_max: 14
+    max_attempts: 200000
+
+model:
+  discriminator: cnn    # cnn | swin
+  swin:
+    model_id: microsoft/swin-tiny-patch4-window7-224
+    input_size: 224     # 64x64 slices are bilinearly upsampled to 224 (keeps pretrained pos-embed)
+    upsample: bilinear
+    pretrained: true
+    trainable_stages: [3, 4]   # train head + last stages; earlier stages frozen
+
+train:
+  lr_g: 0.0001
+  lr_d: 0.0001
+  betas: [0.9, 0.99]
+  critic_iters: 5       # D updates per G update (WGAN-GP)
+  gp_lambda: 10
+  log_every: 10
+  ckpt_every: 5         # epochs
+
+sam:
+  model_id: facebook/sam-vit-base
+  points_per_side: 16
+  merge_iou: 0.3
+  n_gt_crops: 5
+  gt_dir: data/processed/sam_gt
+
+generate:
+  n_volumes: 4
+  seeds: [0, 1, 2, 3]
+
+metrics:
+  s2_rmax: 32
+
+logging:
+  level: INFO

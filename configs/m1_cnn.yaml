@@ -1,0 +1,9 @@
+# M1 — SliceGAN baseline: original CNN discriminator on the raw/segmented 2D image.
+base: default.yaml
+run_name: m1_cnn
+
+model:
+  discriminator: cnn
+
+data:
+  branch: raw
