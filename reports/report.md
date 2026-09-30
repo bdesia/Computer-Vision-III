@@ -75,6 +75,6 @@ TBD
 | φ / S₂ descriptors + tests | Student | Done |
 | M1 SliceGAN baseline (integration done; full run pending) | Student | In progress |
 | M2 Swin-T discriminator (integration done; full run pending) | Student | In progress |
-| M3 SAM front-end | Student | Pending |
+| M3 SAM front-end (done; MicroLib manual GT crops pending) | Student | In progress |
 | Generation, metrics and figures | Student | Pending |
 | Report and presentation | Student | Pending |

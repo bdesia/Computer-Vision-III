@@ -1,0 +1,57 @@
+crops:
+- crop: 0
+  y: 40
+  x: 347
+- crop: 1
+  y: 293
+  x: 197
+- crop: 2
+  y: 194
+  x: 385
+- crop: 3
+  y: 90
+  x: 42
+- crop: 4
+  y: 330
+  x: 341
+gt_source: synthetic ground truth
+per_crop:
+- crop: 0
+  y: 40
+  x: 347
+  sam_iou: 0.827016520894072
+  sam_dice: 0.9053191489361702
+  otsu_iou: 0.9024390243902439
+  otsu_dice: 0.9487179487179487
+- crop: 1
+  y: 293
+  x: 197
+  sam_iou: 0.8620414673046252
+  sam_dice: 0.9259100642398287
+  otsu_iou: 0.9190853122251539
+  otsu_dice: 0.9578368469294225
+- crop: 2
+  y: 194
+  x: 385
+  sam_iou: 0.8988366211431462
+  sam_dice: 0.946723494938732
+  otsu_iou: 0.9278741865509761
+  otsu_dice: 0.9625879043600563
+- crop: 3
+  y: 90
+  x: 42
+  sam_iou: 0.8272632674297606
+  sam_dice: 0.9054669703872438
+  otsu_iou: 0.8945497630331753
+  otsu_dice: 0.9443402126328956
+- crop: 4
+  y: 330
+  x: 341
+  sam_iou: 0.8825910931174089
+  sam_dice: 0.9376344086021505
+  otsu_iou: 0.9165751920965971
+  otsu_dice: 0.9564719358533792
+mean_sam_iou: 0.8595497939778024
+mean_sam_dice: 0.924210817420825
+mean_otsu_iou: 0.9121046956592294
+mean_otsu_dice: 0.9539909696987404

@@ -167,6 +167,38 @@ upstream) are augmented with random 90° rotations and flips only. TF32 matmuls 
 every model. Measured on an RTX A2000 12 GB with MicroLib 000210: 0.30 s per G step for M1 and
 1.9 s for M2, i.e. ~25 min vs ~2.6 h for the default 50 × 100 G steps.
 
+### SAM phase front-end (M3)
+
+`src/features/sam_segment.py` segments the raw grayscale micrograph with SAM ViT-B
+(`facebook/sam-vit-base`, Hugging Face `mask-generation` pipeline), zero-shot:
+
+1. **Tiled automatic mask generation.** The particles are small relative to SAM's 1024 px input, so
+   the image is split into 256 px tiles (32 px overlap), each with a 32 × 32 point grid. A single
+   pass over the 800 px MicroLib image with the brief's 16 points/side found only `φ = 0.07`
+   (Otsu: 0.23); tiling raises it to 0.22. (SAM's own multi-crop option is broken in the HF pipeline.)
+2. **Merge:** masks with IoU > 0.3 are grouped (union-find over overlapping bounding boxes).
+3. **Intensity rule:** the matrix gray level is the image median (majority phase); group mean
+   gray levels are split with an area-weighted Otsu threshold and the groups on the far side from
+   the matrix are the inclusion phase. Everything else, including pixels no mask covers, is matrix.
+
+```bash
+make sam                                          # synthetic
+make sam DATA=configs/data/microlib_000210.yaml   # real
+```
+
+Outputs: `data/processed/<name>/train_sam/` (`image.png`, `crops.npy`, `meta.yaml`),
+`data/interim/<name>/sam_overlay.png` and `sam_labels.png`, and the evaluation crops in
+`data/processed/<name>/sam_gt/` (see the README there).
+
+| Dataset | φ SAM | φ Otsu | SAM vs Otsu IoU | SAM vs GT IoU / Dice (5 crops) | Otsu vs GT IoU / Dice |
+|---------|-------|--------|-----------------|--------------------------------|-----------------------|
+| synthetic (`φ_true = 0.250`) | 0.290 | 0.254 | 0.865 | 0.860 / 0.924 | 0.912 / 0.954 |
+| MicroLib 000210 | 0.217 | 0.232 | 0.844 | TODO (manual GT) | TODO |
+
+On the synthetic image SAM's masks follow the blurred edges outwards, overestimating `φ`; Otsu,
+whose threshold sits halfway between the two gray levels, is more accurate there. On MicroLib SAM
+misses a few islands and shows some straight cuts at tile borders.
+
 ## Evaluation
 
 ```bash

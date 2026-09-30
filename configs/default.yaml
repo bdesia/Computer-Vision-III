@@ -76,9 +76,18 @@ train:
   ckpt_every: 5         # epochs
 
 sam:
-  model_id: facebook/sam-vit-base
-  points_per_side: 16
-  merge_iou: 0.3
+  model_id: facebook/sam-vit-base   # zero-shot, no fine-tuning (HF transformers mask-generation)
+  # Tiled automatic mask generation: particles are small relative to SAM's 1024 px input, so the
+  # micrograph is split into overlapping tiles (each upscaled by SAM) with a point grid per tile.
+  # On MicroLib 000210 a single 800 px pass with 16 points/side finds phi=0.07 (Otsu 0.23);
+  # 256 px tiles with 32 points/side reach phi=0.216, IoU 0.88 vs Otsu.
+  tile_size: 256
+  tile_overlap: 32
+  points_per_side: 32
+  points_per_batch: 64
+  pred_iou_thresh: 0.80
+  stability_score_thresh: 0.85
+  merge_iou: 0.3        # masks with IoU > 0.3 are merged before the intensity rule
   n_gt_crops: 5
   gt_dir: data/processed/{data_name}/sam_gt
 

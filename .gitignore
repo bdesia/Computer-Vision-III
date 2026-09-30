@@ -21,7 +21,8 @@ data/processed/*
 data/processed/*/*
 !data/processed/*/sam_gt/
 data/processed/*/sam_gt/*
-!data/processed/*/sam_gt/*.png
+!data/processed/*/sam_gt/*_gt.png
+!data/processed/*/sam_gt/metrics.yaml
 !data/processed/*/sam_gt/README.md
 
 # Model weights and generated volumes
