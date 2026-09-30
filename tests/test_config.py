@@ -31,7 +31,8 @@ def test_model_configs_inherit_default():
         # Inherited, not redefined
         assert cfg["volume_size"] == 64
         assert cfg["n_phases"] == 2
-        assert cfg["model"]["swin"]["model_id"] == "microsoft/swin-tiny-patch4-window7-224"
+        assert cfg["model"]["swin"]["backbone"] == "swin_tiny_patch4_window7_224.ms_in1k"
+        assert cfg["train"]["fake_slices"] == 64  # same critic budget for all models
 
 
 def test_set_seed_is_reproducible():

@@ -59,7 +59,7 @@ TBD
 | Dataset (synthetic done; real image pending) | Student | In progress |
 | φ / S₂ descriptors + tests | Student | Done |
 | M1 SliceGAN baseline (integration done; full run pending) | Student | In progress |
-| M2 Swin-T discriminator | Student | Pending |
+| M2 Swin-T discriminator (integration done; full run pending) | Student | In progress |
 | M3 SAM front-end | Student | Pending |
 | Generation, metrics and figures | Student | Pending |
 | Report and presentation | Student | Pending |

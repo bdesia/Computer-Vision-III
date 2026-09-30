@@ -46,11 +46,14 @@ data:
 model:
   discriminator: cnn    # cnn | swin
   swin:
-    model_id: microsoft/swin-tiny-patch4-window7-224
-    input_size: 224     # 64x64 slices are bilinearly upsampled to 224 (keeps pretrained pos-embed)
-    upsample: bilinear
+    # Microsoft Swin-T ImageNet-1k weights (HF Hub: timm/swin_tiny_patch4_window7_224.ms_in1k,
+    # same checkpoint as microsoft/swin-tiny-patch4-window7-224). timm is used because it shrinks
+    # windows and resizes the relative-position bias for small inputs; HF transformers crashes at 64px.
+    backbone: swin_tiny_patch4_window7_224.ms_in1k
+    input_size: 64      # native 64x64 slices (Swin-T has no absolute pos-embed); 224 = bilinear upsample
+    upsample: bilinear  # only used when input_size != img_size
     pretrained: true
-    trainable_stages: [3, 4]   # train head + last stages; earlier stages frozen
+    trainable_stages: [3, 4]   # train head + last stages; patch embed and stages 1-2 frozen
 
 train:
   lr_g: 0.0001
@@ -59,7 +62,8 @@ train:
   critic_iters: 5       # D updates per G update (WGAN-GP)
   gp_lambda: 10
   d_batch_size: 8       # volumes generated per critic step (upstream D_batch_size)
-  fake_slices: null     # fake slices per axis fed to D; null = all L*d_batch_size (upstream)
+  fake_slices: 64       # random fake slices per axis fed to D, same for all models; null = all 512 (upstream)
+  allow_tf32: true      # TF32 matmuls on Ampere+ (applied to every model)
   max_minutes: null     # optional wall-clock budget; stops cleanly and checkpoints
   cudnn_benchmark: true
   log_every: 10         # G steps

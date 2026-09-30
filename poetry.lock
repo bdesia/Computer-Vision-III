@@ -2445,6 +2445,25 @@ xml = ["defusedxml", "lxml"]
 zarr = ["fsspec", "zarr"]
 
 [[package]]
+name = "timm"
+version = "1.0.11"
+description = "PyTorch Image Models"
+optional = false
+python-versions = ">=3.8"
+groups = ["main"]
+files = [
+    {file = "timm-1.0.11-py3-none-any.whl", hash = "sha256:52a6f895e2cbec35a87d0846870419c2c0aa40de9b205bcda917f38278bf3044"},
+    {file = "timm-1.0.11.tar.gz", hash = "sha256:a005f72b87e67ed30cdbf405a9ffd4e723360c780a43b1cefe266af8ecc9d151"},
+]
+
+[package.dependencies]
+huggingface_hub = "*"
+pyyaml = "*"
+safetensors = "*"
+torch = "*"
+torchvision = "*"
+
+[[package]]
 name = "tokenizers"
 version = "0.20.3"
 description = ""
@@ -2883,4 +2902,4 @@ files = [
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.11,<3.13"
-content-hash = "d5df174670e011d06ca8d3856e1f83b6f74cf4866b802372e06afaf091fdeabd"
+content-hash = "70674420debcf8692b0bf2a49a97dfd26ee39e032635fca1b3faf09f519e09ad"

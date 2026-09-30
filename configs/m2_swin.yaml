@@ -8,5 +8,5 @@ model:
 data:
   branch: raw
 
-# RTX A2000 12 GB fits batch 8 with 224 upsampling; use 4 on GPUs < 8 GB.
+# Swin-T at native 64px fits batch 8 on an RTX A2000 12 GB; use 4 on GPUs < 8 GB.
 batch_size: 8

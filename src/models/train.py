@@ -70,6 +70,7 @@ def train(cfg: dict) -> Path:
 
     device = get_device(cfg["device"])
     torch.backends.cudnn.benchmark = bool(tcfg.get("cudnn_benchmark", True))
+    torch.backends.cuda.matmul.allow_tf32 = bool(tcfg.get("allow_tf32", False))
     l, nc, nz = cfg["img_size"], cfg["n_phases"], cfg["z_channels"]
     batch_size = cfg["batch_size"]
     d_batch_size = tcfg.get("d_batch_size", batch_size)
@@ -198,8 +199,8 @@ def main() -> None:
     set_seed(cfg["seed"])
     try:
         train(cfg)
-    except (FileNotFoundError, ValueError, ImportError) as exc:
-        log.error("%s", exc)
+    except (FileNotFoundError, ValueError, ImportError, RuntimeError) as exc:
+        log.exception("Training failed: %s", exc)
         raise SystemExit(1) from exc
 
 
