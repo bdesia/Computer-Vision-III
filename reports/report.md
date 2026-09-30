@@ -58,7 +58,7 @@ TBD
 | Repo skeleton, configs, Makefile, setup | Student | Done |
 | Dataset (synthetic done; real image pending) | Student | In progress |
 | φ / S₂ descriptors + tests | Student | Done |
-| M1 SliceGAN baseline | Student | Pending |
+| M1 SliceGAN baseline (integration done; full run pending) | Student | In progress |
 | M2 Swin-T discriminator | Student | Pending |
 | M3 SAM front-end | Student | Pending |
 | Generation, metrics and figures | Student | Pending |

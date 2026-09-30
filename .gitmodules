@@ -1,0 +1,3 @@
+[submodule "external/SliceGAN"]
+	path = external/SliceGAN
+	url = https://github.com/stke9/SliceGAN.git

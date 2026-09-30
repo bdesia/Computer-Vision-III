@@ -68,8 +68,8 @@ Source is set in `configs/default.yaml → data.source`:
 - `synthetic` (current default): non-overlapping discs placed by random sequential adsorption (RSA),
   target `φ` 0.25, 512², fixed seed. The discs are rendered as a blurred, noisy grayscale micrograph
   so that segmentation (Otsu for M1/M2, SAM for M3) is non-trivial; the clean mask is kept as ground truth.
-- `slicegan`: a two-phase micrograph from `external/SliceGAN/Examples/` (`data.slicegan_example`).
-  TODO: pick the file.
+- `slicegan`: a micrograph from `external/SliceGAN/Examples/` (`data.slicegan_example`). Upstream only
+  ships `NMC.tif` (3 phases, out of scope), so this source is only useful with a custom file.
 - `microlib`: one entry from [MicroLib](https://microlib.io), placed manually at `data.raw_path`.
   TODO: cite the chosen ID.
 
@@ -95,7 +95,33 @@ poetry run python -m src.models.train --config configs/m2_swin.yaml         # ma
 poetry run python -m src.models.train --config configs/m3_swin_sam.yaml     # make train-m3
 ```
 
-Checkpoints go to `models/<run_name>/`, logs to `logs/<run_name>.log`.
+Quick smoke test (runs on CPU too):
+
+```bash
+poetry run python -m src.models.train --config configs/m1_cnn.yaml --epochs 2 --iters-per-epoch 1 --device cpu
+```
+
+`--epochs`, `--iters-per-epoch` and `--device` override the yaml. `train.max_minutes` sets an optional
+wall-clock budget (training stops cleanly and checkpoints).
+
+Each run writes to `models/<run_name>/`: `G_last.pt`, `D_last.pt`, the resolved `config.yaml`,
+`history.csv` (critic real/fake scores, Wasserstein estimate, gradient penalty, G loss, s/step),
+`previews/epochNNN.png` (central xy/xz/yz slices) and SliceGAN's `slicegan_params.data`.
+Logs go to `logs/<run_name>.log`.
+
+### How SliceGAN is integrated
+
+`external/SliceGAN` is the unmodified upstream repo (git submodule, MIT). `src/models/slicegan_wrapper.py`
+builds the generator and the CNN critic with upstream's `slicegan_rc_nets` and the exact layer lists of
+`run_slicegan.py` (`z_channels = 32`, 4³ latent → 64³ volume), and reuses upstream's gradient penalty.
+`src/models/train.py` is a fork of upstream `model.train` with the same WGAN-GP schedule (Adam
+1e-4, β = (0.9, 0.99), λ = 10, 5 critic steps per G step, one isotropic critic shared by the three
+axes). The differences are: config/logging/checkpointing, a pluggable critic (CNN or Swin-T), random
+64×64 crops sampled on the fly on the GPU instead of 28 800 pre-built crops in RAM, and an optional
+cap on the number of fake slices per axis (`train.fake_slices`).
+
+Upstream only ships `Examples/NMC.tif` (3 phases, out of scope), so the real 2D image has to come
+from MicroLib.
 
 ## Evaluation
 

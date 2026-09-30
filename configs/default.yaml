@@ -3,9 +3,9 @@ seed: 42
 img_size: 64            # 2D training crop size fed to D
 volume_size: 64         # generated cube edge (64^3)
 epochs: 50              # raise if GPU available; report the value actually used
-iters_per_epoch: 100    # generator updates per epoch (SliceGAN upstream default)
+iters_per_epoch: 100    # generator updates per epoch (critic runs critic_iters x this)
 batch_size: 8
-z_channels: 16
+z_channels: 32          # upstream run_slicegan.py value (G architecture is kept unchanged)
 n_phases: 2
 device: cuda            # falls back to cpu (logged as WARNING) if CUDA is unavailable
 
@@ -58,7 +58,11 @@ train:
   betas: [0.9, 0.99]
   critic_iters: 5       # D updates per G update (WGAN-GP)
   gp_lambda: 10
-  log_every: 10
+  d_batch_size: 8       # volumes generated per critic step (upstream D_batch_size)
+  fake_slices: null     # fake slices per axis fed to D; null = all L*d_batch_size (upstream)
+  max_minutes: null     # optional wall-clock budget; stops cleanly and checkpoints
+  cudnn_benchmark: true
+  log_every: 10         # G steps
   ckpt_every: 5         # epochs
 
 sam:
