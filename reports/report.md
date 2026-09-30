@@ -18,7 +18,26 @@ TBD — tools, modules, Hugging Face model IDs, SliceGAN fork.
 
 ## 4. Evaluation
 
-TBD — definitions of `φ`, `|Δφ|`, `S₂(r)` and its MAE, SAM IoU/Dice.
+There is no 3D ground truth, so generated volumes are compared statistically with the 2D training
+image (implemented in `src/features/descriptors.py`, tested in `tests/test_descriptors.py`).
+Label 1 is the inclusion/pore phase and `I(x)` its indicator function.
+
+- **Phase fraction** `φ = ⟨I(x)⟩`. For each model, `φ` is averaged over N ≥ 4 generated 64³ volumes
+  (different seeds) and reported as mean ± std, together with `|Δφ| = |φ̄_gen − φ_train|`.
+- **Two-point correlation** `S₂(r) = P[I(x) = 1, I(x + r) = 1]`, computed by FFT autocorrelation.
+  For non-periodic images each lag is normalized by its number of valid pixel pairs. The 2D map is
+  radially averaged over lag vectors with `round(|r|) = r`, for `r = 0 … 32`. `S₂(0) = φ` and
+  `S₂(r) → φ²` for uncorrelated points.
+  For a volume, `S₂` is averaged over all xy, xz and yz slices (192 slices for 64³), so the metric
+  also penalizes anisotropy between the three orientations.
+- **S₂ MAE** `= mean_r |S₂_gen(r) − S₂_train(r)|` over `r = 0 … 32`, using the mean curve of the
+  N volumes; the std of the per-volume MAE is also reported. Reference scale: on the synthetic
+  dataset, the Otsu segmentation vs the ground-truth mask gives an `S₂` MAE of 0.0021.
+- **SAM segmentation quality** (M3 front-end only): IoU `= |P ∩ G| / |P ∪ G|` and Dice
+  `= 2|P ∩ G| / (|P| + |G|)` of the SAM label map `P` against manually corrected masks `G` on
+  5 crops of 64×64.
+
+3D SSIM is not used (there is no volumetric ground truth), and no classification accuracy is reported.
 
 ## 5. Results and examples
 
@@ -38,7 +57,7 @@ TBD
 |------|-------|--------|
 | Repo skeleton, configs, Makefile, setup | Student | Done |
 | Dataset (synthetic done; real image pending) | Student | In progress |
-| φ / S₂ descriptors + tests | Student | Pending |
+| φ / S₂ descriptors + tests | Student | Done |
 | M1 SliceGAN baseline | Student | Pending |
 | M2 Swin-T discriminator | Student | Pending |
 | M3 SAM front-end | Student | Pending |
