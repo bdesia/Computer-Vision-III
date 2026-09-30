@@ -37,7 +37,7 @@ TBD
 | Task | Owner | Status |
 |------|-------|--------|
 | Repo skeleton, configs, Makefile, setup | Student | Done |
-| Dataset (synthetic + real) | Student | Pending |
+| Dataset (synthetic done; real image pending) | Student | In progress |
 | φ / S₂ descriptors + tests | Student | Pending |
 | M1 SliceGAN baseline | Student | Pending |
 | M2 Swin-T discriminator | Student | Pending |

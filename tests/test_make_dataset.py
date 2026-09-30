@@ -1,0 +1,85 @@
+"""Tests for synthetic RSA generation, thresholding, cropping and the full dataset build."""
+
+import copy
+from pathlib import Path
+
+import numpy as np
+import pytest
+import yaml
+
+from src.data.make_dataset import (
+    binarize,
+    build_dataset,
+    extract_crops,
+    generate_rsa,
+    load_grayscale,
+    render_grayscale,
+)
+from src.utils import load_config
+
+CONFIGS = Path(__file__).resolve().parents[1] / "configs"
+
+
+def _rsa(seed=0, canvas=128, phi=0.25):
+    return generate_rsa(canvas, phi, 4, 8, 1, 50_000, np.random.default_rng(seed))
+
+
+def test_rsa_reaches_target_fraction():
+    labels, n = _rsa()
+    assert labels.dtype == np.uint8 and set(np.unique(labels)) == {0, 1}
+    assert n > 0
+    assert 0.25 <= labels.mean() < 0.25 + 0.02  # overshoot at most ~one disc
+
+
+def test_rsa_is_reproducible():
+    a, _ = _rsa(seed=7)
+    b, _ = _rsa(seed=7)
+    c, _ = _rsa(seed=8)
+    assert np.array_equal(a, b)
+    assert not np.array_equal(a, c)
+
+
+def test_rsa_rejects_invalid_fraction():
+    with pytest.raises(ValueError):
+        generate_rsa(64, 0.8, 4, 8, 1, 100, np.random.default_rng(0))
+
+
+def test_binarize_recovers_noisy_rendering():
+    rng = np.random.default_rng(0)
+    labels, _ = _rsa()
+    gray = render_grayscale(labels, 0.35, 0.7, 1.5, 0.05, rng)
+    pred, _ = binarize(gray)
+    iou = np.logical_and(pred, labels).sum() / np.logical_or(pred, labels).sum()
+    assert iou > 0.85
+
+
+def test_binarize_labels_minority_as_inclusion():
+    gray = np.zeros((32, 32), dtype=np.float32)
+    gray[:8] = 1.0  # bright minority
+    assert binarize(1.0 - gray)[0].mean() == pytest.approx(0.25)  # dark minority is still label 1
+    assert binarize(gray)[0].mean() == pytest.approx(0.25)
+
+
+def test_extract_crops_shape():
+    crops = extract_crops(np.zeros((128, 96), dtype=np.uint8), size=64, stride=32)
+    assert crops.shape == (3 * 2, 64, 64)
+    with pytest.raises(ValueError):
+        extract_crops(np.zeros((32, 32)), size=64, stride=32)
+
+
+def test_build_dataset_synthetic(tmp_path):
+    cfg = copy.deepcopy(load_config(CONFIGS / "default.yaml"))
+    cfg["paths"].update(interim=str(tmp_path / "interim"), logs=str(tmp_path / "logs"))
+    cfg["data"]["raw_path"] = str(tmp_path / "raw" / "micro_2d.png")
+    cfg["data"]["train_dirs"]["raw"] = str(tmp_path / "processed" / "train_2d")
+    cfg["data"]["synthetic"]["canvas"] = 128
+
+    meta = build_dataset(cfg)
+
+    out = tmp_path / "processed" / "train_2d"
+    assert (out / "image.png").exists() and (out / "meta.yaml").exists()
+    assert np.load(out / "crops.npy").shape == (9, 64, 64)
+    assert yaml.safe_load((out / "meta.yaml").read_text())["n_crops"] == 9
+    assert abs(meta["phi_train"] - meta["phi_true"]) < 0.03
+    assert meta["otsu_iou_vs_gt"] > 0.85
+    assert load_grayscale(cfg["data"]["raw_path"]).shape == (128, 128)

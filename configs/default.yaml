@@ -21,8 +21,10 @@ paths:
 
 data:
   source: synthetic     # synthetic | slicegan | microlib
-  raw_path: data/raw/micro_2d.png
-  microlib_id: null     # fill in when source == microlib
+  raw_path: data/raw/micro_2d.png   # grayscale micrograph (written here when synthetic)
+  slicegan_example: null            # file name under external/SliceGAN/Examples/ when source == slicegan
+  microlib_id: null     # fill in when source == microlib (place the image at raw_path)
+  inclusion_is_minority: true       # after thresholding, label 1 = minority phase
   branch: raw           # raw -> processed/train_2d (M1/M2) | sam -> processed/train_sam (M3)
   train_dirs:
     raw: data/processed/train_2d
@@ -33,7 +35,13 @@ data:
     phi_target: 0.25
     radius_min: 6
     radius_max: 14
+    min_gap: 1          # pixels between discs (keeps discs pixel-disjoint)
     max_attempts: 200000
+    # Grayscale rendering so thresholding / SAM have a non-trivial task
+    intensity_matrix: 0.35
+    intensity_inclusion: 0.70
+    blur_sigma: 1.5
+    noise_std: 0.05     # Otsu IoU vs GT ~0.91 at this level; 0.08 drops it to ~0.80
 
 model:
   discriminator: cnn    # cnn | swin

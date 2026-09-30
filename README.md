@@ -65,9 +65,26 @@ poetry run python -m src.data.make_dataset --config configs/default.yaml   # mak
 
 Source is set in `configs/default.yaml → data.source`:
 
-- `synthetic` (current default): RSA circular inclusions, target `φ` 0.25, 512², fixed seed.
-- `slicegan`: a two-phase micrograph from `external/SliceGAN/Examples/`. TODO: pick the file.
-- `microlib`: one entry from [MicroLib](https://microlib.io). TODO: cite the chosen ID.
+- `synthetic` (current default): non-overlapping discs placed by random sequential adsorption (RSA),
+  target `φ` 0.25, 512², fixed seed. The discs are rendered as a blurred, noisy grayscale micrograph
+  so that segmentation (Otsu for M1/M2, SAM for M3) is non-trivial; the clean mask is kept as ground truth.
+- `slicegan`: a two-phase micrograph from `external/SliceGAN/Examples/` (`data.slicegan_example`).
+  TODO: pick the file.
+- `microlib`: one entry from [MicroLib](https://microlib.io), placed manually at `data.raw_path`.
+  TODO: cite the chosen ID.
+
+Outputs:
+
+| Path | Content |
+|------|---------|
+| `data/raw/micro_2d.png` | grayscale micrograph (input to Otsu and SAM) |
+| `data/raw/micro_2d_gt.png`, `micro_2d.json` | synthetic only: clean mask and `phi_true` |
+| `data/interim/micro_2d_gray.png`, `micro_2d_otsu.png` | normalized grayscale and Otsu label map |
+| `data/processed/train_2d/image.png` | M1/M2 training label map (0 = matrix, 1 = inclusion) |
+| `data/processed/train_2d/crops.npy` | 64×64 crops, stride 32, `(N, 64, 64)` uint8 |
+| `data/processed/train_2d/meta.yaml` | `φ`, threshold, crop stats, Otsu IoU vs GT (synthetic) |
+
+With the default config: `phi_true = 0.2505`, `phi_train = 0.2540`, Otsu IoU vs GT = 0.913, 225 crops.
 
 ## Training
 
