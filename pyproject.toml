@@ -53,6 +53,8 @@ priority = "explicit"
 testpaths = ["tests"]
 pythonpath = ["."]
 addopts = "-q"
+# matplotlib 3.9 calls pyparsing APIs deprecated in pyparsing 3.3 (third-party noise)
+filterwarnings = ["ignore:.*deprecated - use.*:DeprecationWarning"]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]

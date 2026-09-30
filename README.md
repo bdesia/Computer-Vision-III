@@ -202,12 +202,26 @@ misses a few islands and shows some straight cuts at tile borders.
 ## Evaluation
 
 ```bash
-make eval      # generates N=4 64³ cubes per model, writes reports/metrics.csv + figures
-make test      # pytest
+make eval                                          # synthetic
+make eval DATA=configs/data/microlib_000210.yaml   # real
+make test                                          # pytest
 ```
 
-Metrics: `φ` mean ± std and `|Δφ|` vs the 2D training image; `S₂(r)` MAE up to `r = 32`
-(averaged over xy/xz/yz slices); SAM IoU/Dice on 5 crops with manual ground truth.
+`make eval` runs `src.models.generate` for M1/M2/M3 and then `src.visualization.visualize`:
+
+- **generate** loads `G_last.pt`, generates one 64³ volume per seed in `generate.seeds` (N = 4) and
+  saves them as `models/<name>/<run>/volumes/*.tif` (0/255). It scores them against two 2D
+  references: `train`, the image the model was trained on (Otsu map for M1/M2, SAM map for M3),
+  and `common`, shared by all models of a dataset so that M2 vs M3 is a fair comparison (the exact
+  ground-truth mask for synthetic, the Otsu map for MicroLib, which has no ground truth). Results go
+  to `metrics.yaml` and `curves.npz` in the run folder.
+- **visualize** upserts `reports/metrics.csv` (one row per dataset × model × reference; columns
+  include `dphi`, `s2_mae`, `s2_err`, `L_mae`, `L_err`, `phi_xy/xz/yz` and the per-plane S₂/L MAE)
+  and writes to `reports/figures/`: `<name>_descriptors.png` (S₂ and L curves),
+  `<name>_qualitative.png` (training input | SAM overlay | xy, xz, yz slices | 3D isosurface),
+  `<name>_training.png` (critic Wasserstein estimate) and `pipeline.png`.
+
+Metric definitions are in `reports/report.md` §4.
 
 ## Results
 

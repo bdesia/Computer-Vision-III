@@ -1,0 +1,68 @@
+"""End-to-end test of generate + visualize on a tiny synthetic dataset with an untrained generator (CPU)."""
+
+import copy
+import csv
+from pathlib import Path
+
+import torch
+
+from src.data.make_dataset import build_dataset
+from src.models.generate import evaluate, generate_volumes, load_generator
+from src.models.slicegan_wrapper import build_generator
+from src.utils import load_config
+from src.visualization.visualize import (
+    collect_metrics,
+    plot_descriptor_curves,
+    plot_pipeline,
+    plot_qualitative_panel,
+    write_metrics_csv,
+)
+
+CONFIGS = Path(__file__).resolve().parents[1] / "configs"
+
+
+def _cfg(tmp_path, model="m1_cnn"):
+    cfg = copy.deepcopy(load_config(CONFIGS / f"{model}.yaml"))
+    root = tmp_path / "work"
+    cfg["device"] = "cpu"
+    cfg["paths"].update(interim=str(root / "interim"), models=str(root / "models"), logs=str(root / "logs"),
+                        figures=str(root / "figures"), reports=str(root / "reports"))
+    cfg["data"]["raw_path"] = str(root / "raw" / "micro_2d.png")
+    cfg["data"]["train_dirs"] = {"raw": str(root / "processed" / "train_2d"),
+                                 "sam": str(root / "processed" / "train_sam")}
+    cfg["data"]["synthetic"]["canvas"] = 128
+    cfg["generate"]["seeds"] = [0, 1]
+    cfg["metrics"].update(n_volumes_eval=2, s2_rmax=8)
+    return cfg
+
+
+def test_generate_evaluate_and_visualize(tmp_path):
+    cfg = _cfg(tmp_path)
+    build_dataset(cfg)
+    run_dir = Path(cfg["paths"]["models"]) / cfg["run_name"]
+    netG = build_generator(cfg, run_dir, training=True)
+    torch.save(netG.state_dict(), run_dir / "G_last.pt")
+
+    reloaded = load_generator(cfg, run_dir, torch.device("cpu"))
+    a = generate_volumes(reloaded, [3], cfg["z_channels"], "cpu")[0]
+    b = generate_volumes(reloaded, [3], cfg["z_channels"], "cpu")[0]
+    assert a.shape == (64, 64, 64) and (a == b).all()  # seeded and deterministic in eval mode
+
+    summary = evaluate(cfg)
+    assert set(summary["references"]) == {"train", "common"}
+    ref = summary["references"]["common"]
+    assert ref["n_volumes"] == 2 and 0.0 <= ref["phi_mean"] <= 1.0 and "L_mae" in ref
+    assert len(list((run_dir / "volumes").glob("*.tif"))) == 2
+
+    csv_path = Path(cfg["paths"]["reports"]) / "metrics.csv"
+    write_metrics_csv(collect_metrics([run_dir]), csv_path)
+    write_metrics_csv(collect_metrics([run_dir]), csv_path)  # upsert, not duplicate
+    rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+    assert len(rows) == 2 and {"dphi", "s2_mae", "s2_err", "L_mae", "phi_xy", "phi_xz", "phi_yz"} <= set(rows[0])
+
+    fig_dir = Path(cfg["paths"]["figures"])
+    plot_descriptor_curves([run_dir], "synthetic", fig_dir / "curves.png")
+    plot_qualitative_panel([cfg], fig_dir / "panel.png")
+    plot_pipeline(fig_dir / "pipeline.png")
+    for name in ("curves.png", "panel.png", "pipeline.png"):
+        assert (fig_dir / name).stat().st_size > 10_000
