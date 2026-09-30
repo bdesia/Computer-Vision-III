@@ -1,0 +1,344 @@
+<title>SliceGAN Volume Viewer</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500&display=swap">
+<style>
+/* Layout: instrument console. A 3D specimen view beside three orthogonal section views, metrics strip below. */
+:root {
+  --bg: #eceef0;
+  --surface: #ffffff;
+  --viewport: #dfe3e6;
+  --ink: #15191c;
+  --muted: #58616a;
+  --line: #cfd5da;
+  --phase: #b45f2b;        /* inclusion / pore phase */
+  --matrix: #232a30;       /* matrix phase in section views */
+  --focus: #2a78d6;
+  --font-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --radius: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1214; --surface: #181c1f; --viewport: #0b0e10; --ink: #e6e9eb; --muted: #97a1a9;
+    --line: #2b3237; --phase: #e38a4e; --matrix: #2c343a; --focus: #5598e7; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1214; --surface: #181c1f; --viewport: #0b0e10; --ink: #e6e9eb; --muted: #97a1a9;
+  --line: #2b3237; --phase: #e38a4e; --matrix: #2c343a; --focus: #5598e7; color-scheme: dark;
+}
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.5; }
+.wrap { max-width: 1180px; margin: 0 auto; padding-inline: 20px; padding-block: 28px 40px; display: grid; gap: 22px; }
+header { display: grid; gap: 6px; }
+.eyebrow { font-family: var(--font-data); font-size: 12px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+h1 { font-family: var(--font-display); font-weight: 600; font-size: clamp(26px, 4vw, 36px); line-height: 1.1; margin: 0; text-wrap: balance; }
+.lede { margin: 0; max-width: 68ch; color: var(--muted); }
+.controls { display: flex; flex-wrap: wrap; gap: 14px 28px; align-items: end; }
+.group { display: grid; gap: 6px; }
+.group-label { font-family: var(--font-data); font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+.seg { display: flex; flex-wrap: wrap; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; background: var(--surface); }
+.seg button { font: 500 14px var(--font-body); color: var(--ink); background: transparent; border: 0; border-right: 1px solid var(--line); padding: 8px 14px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--surface); }
+.seg button:disabled { color: var(--muted); cursor: not-allowed; }
+.chip { font: 500 10px var(--font-data); letter-spacing: .06em; text-transform: uppercase; border: 1px solid currentColor; border-radius: 99px; padding: 1px 6px; }
+button:focus-visible, input:focus-visible, canvas:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.stage { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); gap: 18px; align-items: start; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+.panel-title { font-family: var(--font-display); font-weight: 600; font-size: 17px; margin: 0; }
+.hint { font-size: 12.5px; color: var(--muted); }
+#view3d { width: 100%; aspect-ratio: 1; max-width: 100%; display: block; border-radius: 4px; background: var(--viewport); touch-action: none; cursor: grab; }
+#view3d:active { cursor: grabbing; }
+.toggles { display: flex; flex-wrap: wrap; gap: 8px 18px; font-size: 13.5px; }
+.toggles label { display: flex; gap: 6px; align-items: center; cursor: pointer; }
+.sections { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.section { display: grid; gap: 6px; min-width: 0; }
+.section canvas { width: 100%; aspect-ratio: 1; max-width: 100%; image-rendering: pixelated; border-radius: 3px; background: var(--matrix); display: block; }
+.section-head { display: flex; justify-content: space-between; align-items: baseline; font-family: var(--font-data); font-size: 12.5px; }
+.section-head b { font-weight: 500; }
+.section-head span { color: var(--muted); font-variant-numeric: tabular-nums; }
+input[type="range"] { width: 100%; accent-color: var(--phase); }
+.ref-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.btn { font: 500 12.5px var(--font-body); color: var(--ink); background: transparent; border: 1px solid var(--line); border-radius: var(--radius); padding: 4px 10px; cursor: pointer; }
+.metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }
+.metric { padding: 12px 14px; border-right: 1px solid var(--line); display: grid; gap: 2px; min-width: 0; }
+.metric:last-child { border-right: 0; }
+.metric .k { font-family: var(--font-data); font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.metric .v { font-family: var(--font-data); font-size: 20px; font-variant-numeric: tabular-nums; }
+.metric .s { font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 18px; font-size: 13px; color: var(--muted); }
+.sw { display: inline-block; width: 11px; height: 11px; border-radius: 2px; vertical-align: -1px; margin-right: 6px; }
+.notice { font-size: 13.5px; color: var(--muted); border: 1px dashed var(--line); border-radius: var(--radius); padding: 10px 14px; }
+@media (max-width: 860px) {
+  .stage { grid-template-columns: minmax(0, 1fr); }
+  .metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .metric:nth-child(2) { border-right: 0; }
+  .metric:nth-child(-n+2) { border-bottom: 1px solid var(--line); }
+}
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow" id="eyebrow">Loading volumes…</div>
+    <h1>SliceGAN Volume Viewer</h1>
+    <p class="lede">Generated 64³ microstructures from one 2D micrograph. Drag the 3D view to rotate and scroll to zoom. Move the section sliders to step through the volume along each axis, and compare with a 64×64 crop of the training image.</p>
+  </header>
+
+  <div class="controls">
+    <div class="group"><span class="group-label" id="model-label">Model</span><div class="seg" id="models" role="group" aria-labelledby="model-label"></div></div>
+    <div class="group"><span class="group-label" id="seed-label">Latent seed</span><div class="seg" id="seeds" role="group" aria-labelledby="seed-label"></div></div>
+  </div>
+
+  <div id="notice" class="notice" hidden></div>
+
+  <div class="stage">
+    <section class="panel">
+      <div class="panel-head"><h2 class="panel-title">Volume</h2><span class="hint" id="count3d"></span></div>
+      <canvas id="view3d" tabindex="0" aria-label="3D view of the inclusion phase. Arrow keys rotate, plus and minus zoom."></canvas>
+      <div class="toggles">
+        <label><input type="checkbox" id="opt-planes" checked> Show section planes</label>
+        <label><input type="checkbox" id="opt-cut"> Cut away above the xy section</label>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-head"><h2 class="panel-title">Sections</h2><span class="hint">1 px = 1 voxel</span></div>
+      <div class="sections">
+        <div class="section"><div class="section-head"><b>xy</b><span id="lab-z"></span></div><canvas id="sec-xy" width="64" height="64"></canvas><input type="range" id="sl-z" min="0" max="63" value="32" aria-label="xy section, z index"></div>
+        <div class="section"><div class="section-head"><b>xz</b><span id="lab-y"></span></div><canvas id="sec-xz" width="64" height="64"></canvas><input type="range" id="sl-y" min="0" max="63" value="32" aria-label="xz section, y index"></div>
+        <div class="section"><div class="section-head"><b>yz</b><span id="lab-x"></span></div><canvas id="sec-yz" width="64" height="64"></canvas><input type="range" id="sl-x" min="0" max="63" value="32" aria-label="yz section, x index"></div>
+        <div class="section"><div class="section-head"><b>2D training</b><span id="lab-crop"></span></div><canvas id="sec-train" width="64" height="64"></canvas><div class="ref-row"><span class="hint" id="train-phi"></span><button class="btn" id="new-crop" type="button">Another crop</button></div></div>
+      </div>
+      <div class="legend"><span><i class="sw" style="background:var(--phase)"></i>inclusion phase</span><span><i class="sw" style="background:var(--matrix)"></i>matrix</span><span>z points up in the xz and yz sections</span></div>
+    </section>
+  </div>
+
+  <div class="metrics" id="metrics"></div>
+  <p class="hint" id="metrics-note"></p>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(() => {
+  const L = 64, N = L * L * L;
+  const $ = (id) => document.getElementById(id);
+  const state = { data: null, model: null, seed: null, vol: null, train: null, crop: [0, 0], z: 32, y: 32, x: 32 };
+
+  // ---------- data
+  function unpack(b64, n) {
+    const bin = atob(b64), out = new Uint8Array(n);
+    for (let i = 0; i < n; i++) out[i] = (bin.charCodeAt(i >> 3) >> (7 - (i & 7))) & 1;
+    return out;
+  }
+  const at = (v, z, y, x) => v[(z * L + y) * L + x];
+
+  // ---------- theme colours
+  function cssColor(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+  function rgbOf(name) {
+    const c = document.createElement("canvas").getContext("2d");
+    c.fillStyle = cssColor(name); c.fillRect(0, 0, 1, 1);
+    return Array.from(c.getImageData(0, 0, 1, 1).data.slice(0, 3));
+  }
+
+  // ---------- 2D sections
+  function drawSection(canvas, pick) {
+    const ctx = canvas.getContext("2d"), img = ctx.createImageData(L, L);
+    const on = rgbOf("--phase"), off = rgbOf("--matrix");
+    for (let r = 0; r < L; r++) for (let c = 0; c < L; c++) {
+      const col = pick(r, c) ? on : off, o = (r * L + c) * 4;
+      img.data[o] = col[0]; img.data[o + 1] = col[1]; img.data[o + 2] = col[2]; img.data[o + 3] = 255;
+    }
+    ctx.putImageData(img, 0, 0);
+  }
+  function drawSections() {
+    const v = state.vol; if (!v) return;
+    const { z, y, x } = state;
+    drawSection($("sec-xy"), (r, c) => at(v, z, r, c));               // rows = y, cols = x
+    drawSection($("sec-xz"), (r, c) => at(v, L - 1 - r, y, c));       // rows = z (up), cols = x
+    drawSection($("sec-yz"), (r, c) => at(v, L - 1 - r, c, x));       // rows = z (up), cols = y
+    $("lab-z").textContent = `z = ${z}`; $("lab-y").textContent = `y = ${y}`; $("lab-x").textContent = `x = ${x}`;
+  }
+  function drawTrain() {
+    const t = state.data.train, [h, w] = t.shape, [r0, c0] = state.crop;
+    drawSection($("sec-train"), (r, c) => state.train[(r0 + r) * w + (c0 + c)]);
+    $("lab-crop").textContent = `row ${r0}, col ${c0}`;
+    $("train-phi").textContent = `φ of full image ${t.phi.toFixed(3)}`;
+  }
+  function newCrop() {
+    const [h, w] = state.data.train.shape;
+    state.crop = [Math.floor(Math.random() * (h - L)), Math.floor(Math.random() * (w - L))];
+    drawTrain();
+  }
+
+  // ---------- 3D view
+  const canvas = $("view3d");
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(32, 1, 1, 1000);
+  const pivot = new THREE.Group(); scene.add(pivot);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
+  const key = new THREE.DirectionalLight(0xffffff, 0.75); key.position.set(1, 2, 1.4); scene.add(key);
+  const fill = new THREE.DirectionalLight(0xffffff, 0.25); fill.position.set(-1.2, -0.4, -1); scene.add(fill);
+
+  const voxelMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  const voxels = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), voxelMat, N);
+  voxels.count = 0; pivot.add(voxels);
+  const boxLines = new THREE.LineSegments(new THREE.EdgesGeometry(new THREE.BoxGeometry(L, L, L)),
+                                         new THREE.LineBasicMaterial({ color: 0x888888 }));
+  pivot.add(boxLines);
+  const planeMat = new THREE.MeshBasicMaterial({ color: 0x888888, transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false });
+  const planes = { z: new THREE.Mesh(new THREE.PlaneGeometry(L, L), planeMat),
+                   y: new THREE.Mesh(new THREE.PlaneGeometry(L, L), planeMat),
+                   x: new THREE.Mesh(new THREE.PlaneGeometry(L, L), planeMat) };
+  planes.z.rotation.x = -Math.PI / 2; planes.x.rotation.y = Math.PI / 2;
+  Object.values(planes).forEach((p) => pivot.add(p));
+
+  const view = { yaw: -0.7, pitch: 0.45, dist: 205 };
+  let dirty = true;
+  function requestRender() { if (!dirty) { dirty = true; requestAnimationFrame(render); } }
+  function render() {
+    dirty = false;
+    pivot.rotation.set(view.pitch, view.yaw, 0, "XYZ");
+    camera.position.set(0, 0, view.dist); camera.lookAt(0, 0, 0);
+    renderer.render(scene, camera);
+  }
+  function resize() {
+    const w = canvas.clientWidth; if (!w) return;
+    renderer.setSize(w, w, false); camera.aspect = 1; camera.updateProjectionMatrix(); requestRender();
+  }
+  new ResizeObserver(resize).observe(canvas);
+
+  // Volume index (z, y, x) -> three.js (x, y = z up, z = y)
+  function rebuildSurface() {
+    const v = state.vol; if (!v) return;
+    const zc = $("opt-cut").checked ? state.z : L - 1;
+    const vis = (z, y, x) => z >= 0 && y >= 0 && x >= 0 && z <= zc && y < L && x < L && at(v, z, y, x) === 1;
+    const m = new THREE.Matrix4(); let n = 0;
+    for (let z = 0; z <= zc; z++) for (let y = 0; y < L; y++) for (let x = 0; x < L; x++) {
+      if (!vis(z, y, x)) continue;
+      if (vis(z + 1, y, x) && vis(z - 1, y, x) && vis(z, y + 1, x) && vis(z, y - 1, x) && vis(z, y, x + 1) && vis(z, y, x - 1)) continue;
+      m.makeTranslation(x - L / 2 + 0.5, z - L / 2 + 0.5, y - L / 2 + 0.5);
+      voxels.setMatrixAt(n++, m);
+    }
+    voxels.count = n; voxels.instanceMatrix.needsUpdate = true;
+    $("count3d").textContent = `${n.toLocaleString()} surface voxels shown`;
+    requestRender();
+  }
+  function placePlanes() {
+    const show = $("opt-planes").checked;
+    planes.z.visible = planes.y.visible = planes.x.visible = show;
+    planes.z.position.set(0, state.z - L / 2 + 0.5, 0);
+    planes.y.position.set(0, 0, state.y - L / 2 + 0.5);
+    planes.x.position.set(state.x - L / 2 + 0.5, 0, 0);
+    requestRender();
+  }
+  function applyTheme() {
+    voxelMat.color.set(cssColor("--phase"));
+    renderer.setClearColor(cssColor("--viewport"));
+    boxLines.material.color.set(cssColor("--muted"));
+    planeMat.color.set(cssColor("--ink"));
+    drawSections(); if (state.train) drawTrain(); requestRender();
+  }
+
+  // pointer orbit + zoom
+  let drag = null;
+  canvas.addEventListener("pointerdown", (e) => { drag = { x: e.clientX, y: e.clientY }; canvas.setPointerCapture(e.pointerId); });
+  canvas.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    view.yaw += (e.clientX - drag.x) * 0.008;
+    view.pitch = Math.max(-1.45, Math.min(1.45, view.pitch + (e.clientY - drag.y) * 0.008));
+    drag = { x: e.clientX, y: e.clientY }; requestRender();
+  });
+  const endDrag = () => { drag = null; };
+  canvas.addEventListener("pointerup", endDrag); canvas.addEventListener("pointercancel", endDrag);
+  canvas.addEventListener("wheel", (e) => { e.preventDefault(); view.dist = Math.max(90, Math.min(420, view.dist * (1 + Math.sign(e.deltaY) * 0.08))); requestRender(); }, { passive: false });
+  canvas.addEventListener("keydown", (e) => {
+    const k = { ArrowLeft: [-0.12, 0], ArrowRight: [0.12, 0], ArrowUp: [0, -0.12], ArrowDown: [0, 0.12] }[e.key];
+    if (k) { view.yaw += k[0]; view.pitch = Math.max(-1.45, Math.min(1.45, view.pitch + k[1])); e.preventDefault(); requestRender(); }
+    if (e.key === "+" || e.key === "=") { view.dist = Math.max(90, view.dist * 0.92); requestRender(); }
+    if (e.key === "-") { view.dist = Math.min(420, view.dist * 1.08); requestRender(); }
+  });
+
+  // ---------- controls
+  function fmt(v, d = 4) { return v == null ? "–" : Number(v).toFixed(d); }
+  function pct(v) { return v == null ? "" : `${(v * 100).toFixed(1)} % relative error`; }
+  function renderMetrics(model) {
+    const box = $("metrics"), mt = model.metrics;
+    if (!mt) { box.innerHTML = ""; $("metrics-note").textContent = ""; return; }
+    const vol = model.volumes.find((v) => v.seed === state.seed);
+    const cells = [
+      ["φ generated", `${fmt(mt.phi_mean, 3)} ± ${fmt(mt.phi_std, 3)}`, `this seed ${fmt(vol.phi, 3)} · 2D ${fmt(mt.phi_train, 3)}`],
+      ["|Δφ|", fmt(mt.abs_dphi, 3), `vs 2D reference`],
+      ["S₂ MAE", fmt(mt.s2_mae), `${pct(mt.s2_err)} · xy ${fmt(mt.s2_mae_xy, 3)} xz ${fmt(mt.s2_mae_xz, 3)} yz ${fmt(mt.s2_mae_yz, 3)}`],
+      ["L MAE", fmt(mt.L_mae), `${pct(mt.L_err)} · xy ${fmt(mt.L_mae_xy, 3)} xz ${fmt(mt.L_mae_xz, 3)} yz ${fmt(mt.L_mae_yz, 3)}`],
+    ];
+    box.innerHTML = cells.map(([k, v, s]) => `<div class="metric"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span></div>`).join("");
+    $("metrics-note").textContent = `Mean over ${model.volumes.length} volumes and all xy, xz and yz sections, for r = 0…32 px, against the 2D ${state.data.reference}.`;
+  }
+  function selectSeed(seed) {
+    state.seed = seed;
+    const model = state.data.models.find((m) => m.id === state.model);
+    const vol = model.volumes.find((v) => v.seed === seed);
+    state.vol = unpack(vol.bits, N);
+    document.querySelectorAll("#seeds button").forEach((b) => b.setAttribute("aria-pressed", String(Number(b.dataset.seed) === seed)));
+    rebuildSurface(); drawSections(); renderMetrics(model);
+  }
+  function selectModel(id) {
+    state.model = id;
+    const model = state.data.models.find((m) => m.id === id);
+    document.querySelectorAll("#models button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+    const seeds = $("seeds"); seeds.innerHTML = "";
+    model.volumes.forEach((v) => {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.seed = v.seed; b.textContent = v.seed;
+      b.addEventListener("click", () => selectSeed(v.seed)); seeds.appendChild(b);
+    });
+    selectSeed(model.volumes.some((v) => v.seed === state.seed) ? state.seed : model.volumes[0].seed);
+  }
+  function build(data) {
+    state.data = data;
+    const [h, w] = data.train.shape;
+    state.train = unpack(data.train.bits, h * w);
+    const um = data.pixel_size_um ? ` · ${data.pixel_size_um} µm per voxel` : "";
+    $("eyebrow").textContent = `${data.dataset.replace("_", " ")} · 64³ voxels${um}`;
+    const bar = $("models");
+    data.models.forEach((m) => {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.id = m.id;
+      b.innerHTML = m.label + (m.status === "ready" ? "" : ' <span class="chip">training</span>');
+      b.disabled = m.status !== "ready"; b.addEventListener("click", () => selectModel(m.id));
+      bar.appendChild(b);
+    });
+    const pending = data.models.filter((m) => m.status !== "ready").map((m) => m.label);
+    if (pending.length) { $("notice").hidden = false; $("notice").textContent = `${pending.join(" and ")} ${pending.length > 1 ? "are" : "is"} still training. This page will be updated with their volumes when training ends.`; }
+    const first = data.models.find((m) => m.status === "ready");
+    state.crop = [Math.floor((h - L) / 2), Math.floor((w - L) / 2)];
+    applyTheme(); drawTrain(); placePlanes();
+    if (first) selectModel(first.id);
+    resize();
+  }
+
+  for (const [axis, id] of [["z", "sl-z"], ["y", "sl-y"], ["x", "sl-x"]]) {
+    $(id).addEventListener("input", (e) => {
+      state[axis] = Number(e.target.value); drawSections(); placePlanes();
+      if (axis === "z" && $("opt-cut").checked) rebuildSurface();
+    });
+  }
+  $("opt-planes").addEventListener("change", placePlanes);
+  $("opt-cut").addEventListener("change", rebuildSurface);
+  $("new-crop").addEventListener("click", newCrop);
+  window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", applyTheme);
+  new MutationObserver(applyTheme).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+
+  fetch("viewer_data.json")
+    .then((r) => { if (!r.ok) throw new Error(`HTTP ${r.status}`); return r.json(); })
+    .then(build)
+    .catch((err) => {
+      $("eyebrow").textContent = "Volumes not found";
+      $("notice").hidden = false;
+      $("notice").textContent = `Could not load viewer_data.json (${err.message}). Run "python -m src.visualization.export_viewer" and serve this folder over HTTP.`;
+    });
+})();
+</script>

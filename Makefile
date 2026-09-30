@@ -15,7 +15,7 @@ CFG_M3 := configs/m3_swin_sam.yaml
 DATA ?=
 DATA_ARG := $(if $(DATA),--data $(DATA))
 
-.PHONY: help setup vendor data sam train-m1 train-m2 train-m3 generate eval test
+.PHONY: help setup vendor data sam train-m1 train-m2 train-m3 generate eval viewer test
 
 help:
 	@echo "setup     create .venv with Poetry (DEVICE=cpu for CPU torch)"
@@ -27,6 +27,7 @@ help:
 	@echo "train-m3  SliceGAN with Swin-T D on SAM phase map"
 	@echo "generate  generate N 64^3 volumes per model + per-model metrics"
 	@echo "eval      generate + aggregate reports/metrics.csv and figures"
+	@echo "viewer    export volumes for reports/viewer/index.html"
 	@echo "test      run pytest"
 
 setup:
@@ -57,6 +58,9 @@ generate:
 
 eval: generate
 	$(PY) -m src.visualization.visualize --configs $(CFG_M1) $(CFG_M2) $(CFG_M3) $(DATA_ARG)
+
+viewer:
+	$(PY) -m src.visualization.export_viewer $(DATA_ARG)
 
 test:
 	$(PY) -m pytest
