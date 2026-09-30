@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
 import shutil
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import numpy as np
@@ -144,6 +147,31 @@ def extract_crops(labels: np.ndarray, size: int, stride: int) -> np.ndarray:
     return np.ascontiguousarray(windows.reshape(-1, size, size))
 
 
+def download_microlib(ml: dict, raw_path: Path, timeout: float = 60.0) -> None:
+    """Download a MicroLib/DoITPoMS micrograph, crop away the scale bar and save it as grayscale PNG."""
+    url = ml["url"].format(id=ml["id"])
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as resp:
+            payload = resp.read()
+    except (urllib.error.URLError, TimeoutError) as exc:
+        raise OSError(
+            f"Could not download {url}: {exc}. Download it manually and save the cropped grayscale "
+            f"image at {raw_path}."
+        ) from exc
+
+    raw_path.parent.mkdir(parents=True, exist_ok=True)
+    (raw_path.parent / f"original_{ml['id']}.jpg").write_bytes(payload)
+    with Image.open(io.BytesIO(payload)) as im:
+        gray = np.asarray(im.convert("L"))
+    (r0, r1), (c0, c1) = ml["keep_rows"], ml["keep_cols"]
+    cropped = gray[r0:r1, c0:c1]
+    Image.fromarray(cropped).save(raw_path)
+    with raw_path.with_suffix(".json").open("w", encoding="utf-8") as fh:
+        json.dump({**ml, "source": "microlib", "url": url, "original_shape": list(gray.shape),
+                   "cropped_shape": list(cropped.shape)}, fh, indent=2)
+    log.info("Downloaded %s %s -> cropped %s", url, gray.shape, cropped.shape)
+
+
 def resolve_raw_image(cfg: dict, rng: np.random.Generator) -> tuple[Path, dict]:
     """Make sure the raw grayscale micrograph exists at `data.raw_path`; return it plus source metadata."""
     data_cfg = cfg["data"]
@@ -199,12 +227,16 @@ def resolve_raw_image(cfg: dict, rng: np.random.Generator) -> tuple[Path, dict]:
         return raw_path, {"slicegan_example": example}
 
     if source == "microlib":
+        ml = data_cfg.get("microlib")
+        if not ml:
+            raise ValueError("data.source == microlib needs a data.microlib block (use a configs/data/ overlay)")
         if not raw_path.exists():
-            raise FileNotFoundError(
-                f"MicroLib image expected at {raw_path}. Download entry "
-                f"{data_cfg.get('microlib_id')} from https://microlib.io and place it there."
-            )
-        return raw_path, {"microlib_id": data_cfg.get("microlib_id")}
+            download_microlib(ml, raw_path)
+        info = {"microlib_id": ml["id"], "url": ml["url"].format(id=ml["id"]),
+                "keep_rows": ml["keep_rows"], "keep_cols": ml["keep_cols"],
+                "pixel_size_um": ml.get("pixel_size_um")}
+        log.info("MicroLib %s -> %s", ml["id"], raw_path)
+        return raw_path, info
 
     raise ValueError(f"Unknown data.source '{source}'; expected one of {SOURCES}")
 
@@ -271,10 +303,11 @@ def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/default.yaml")
+    parser.add_argument("--data", action="append", default=[], help="dataset overlay yaml (repeatable)")
     parser.add_argument("--source", choices=SOURCES, help="override data.source")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    cfg = load_config(args.config, args.data)
     if args.source:
         cfg["data"]["source"] = args.source
     setup_logging(cfg["paths"]["logs"], "make_dataset", cfg["logging"]["level"])

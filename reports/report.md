@@ -56,7 +56,7 @@ TBD
 | Task | Owner | Status |
 |------|-------|--------|
 | Repo skeleton, configs, Makefile, setup | Student | Done |
-| Dataset (synthetic done; real image pending) | Student | In progress |
+| Dataset (synthetic + MicroLib 000210) | Student | Done |
 | φ / S₂ descriptors + tests | Student | Done |
 | M1 SliceGAN baseline (integration done; full run pending) | Student | In progress |
 | M2 Swin-T discriminator (integration done; full run pending) | Student | In progress |

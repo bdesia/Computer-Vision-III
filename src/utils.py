@@ -27,9 +27,8 @@ def deep_merge(base: dict, override: dict) -> dict:
     return merged
 
 
-def load_config(path: str | Path) -> dict[str, Any]:
-    """Load a YAML config, resolving an optional `base:` key relative to the file."""
-    path = Path(path)
+def _read_yaml(path: Path) -> dict[str, Any]:
+    """Read one YAML file, recursively merging it on top of its optional `base:` file."""
     try:
         with path.open("r", encoding="utf-8") as fh:
             cfg = yaml.safe_load(fh) or {}
@@ -40,8 +39,32 @@ def load_config(path: str | Path) -> dict[str, Any]:
 
     base_name = cfg.pop("base", None)
     if base_name is not None:
-        cfg = deep_merge(load_config(path.parent / base_name), cfg)
+        cfg = deep_merge(_read_yaml(path.parent / base_name), cfg)
+    return cfg
+
+
+def _substitute(obj: Any, key: str, value: str) -> Any:
+    """Replace `{key}` in every string of a nested config."""
+    if isinstance(obj, dict):
+        return {k: _substitute(v, key, value) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_substitute(v, key, value) for v in obj]
+    if isinstance(obj, str):
+        return obj.replace("{" + key + "}", value)
+    return obj
+
+
+def load_config(path: str | Path, overlays: list[str | Path] | None = None) -> dict[str, Any]:
+    """Load a model config (with `base:` inheritance), merge optional overlays (e.g. a dataset
+    config) on top, and resolve `{data_name}` placeholders from `data.name`."""
+    path = Path(path)
+    cfg = _read_yaml(path)
+    for overlay in overlays or []:
+        cfg = deep_merge(cfg, _read_yaml(Path(overlay)))
     cfg.setdefault("run_name", path.stem)
+    data_name = cfg.get("data", {}).get("name")
+    if data_name:
+        cfg = _substitute(cfg, "data_name", str(data_name))
     return cfg
 
 

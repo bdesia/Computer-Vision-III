@@ -1,0 +1,15 @@
+# Dataset overlay: MicroLib micrograph 000210 (DoITPoMS micrograph library).
+# Chosen at random (seed 42 shuffle) among MicroLib "twophase" entries with a phase gray-level gap
+# >= 80, then checked for isotropy: x/y correlation-length ratio 1.11 after thresholding.
+# Dark islands (phi ~0.22) in a light matrix; scale bar removed by cropping.
+# Usage: --data configs/data/microlib_000210.yaml
+data:
+  name: microlib_000210
+  source: microlib
+  microlib:
+    id: "000210"
+    url: https://www.doitpoms.ac.uk/miclib/micrographs/large/{id}.jpg
+    keep_rows: [0, 437]     # MicroLib barbox rows 437-525 hold the scale bar
+    keep_cols: [0, 800]
+    phases_gray: [8, 133]   # MicroLib annotated gray levels (reference only; Otsu is used)
+    pixel_size_um: 0.687    # MicroLib vox_size

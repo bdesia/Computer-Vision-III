@@ -9,26 +9,29 @@ z_channels: 32          # upstream run_slicegan.py value (G architecture is kept
 n_phases: 2
 device: cuda            # falls back to cpu (logged as WARNING) if CUDA is unavailable
 
+# `{data_name}` is replaced by data.name, so each dataset gets its own data/model/log folders.
 paths:
-  raw: data/raw
-  interim: data/interim
-  processed: data/processed
-  models: models
-  logs: logs
+  raw: data/raw/{data_name}
+  interim: data/interim/{data_name}
+  processed: data/processed/{data_name}
+  models: models/{data_name}
+  logs: logs/{data_name}
   figures: reports/figures
   reports: reports
   slicegan: external/SliceGAN
 
+# Default dataset: synthetic. Real data is selected with a dataset overlay, e.g.
+#   --data configs/data/microlib_000210.yaml
 data:
+  name: synthetic
   source: synthetic     # synthetic | slicegan | microlib
-  raw_path: data/raw/micro_2d.png   # grayscale micrograph (written here when synthetic)
+  raw_path: data/raw/{data_name}/micro_2d.png   # grayscale micrograph (written here when synthetic)
   slicegan_example: null            # file name under external/SliceGAN/Examples/ when source == slicegan
-  microlib_id: null     # fill in when source == microlib (place the image at raw_path)
   inclusion_is_minority: true       # after thresholding, label 1 = minority phase
-  branch: raw           # raw -> processed/train_2d (M1/M2) | sam -> processed/train_sam (M3)
+  branch: raw           # raw -> train_2d (M1/M2) | sam -> train_sam (M3)
   train_dirs:
-    raw: data/processed/train_2d
-    sam: data/processed/train_sam
+    raw: data/processed/{data_name}/train_2d
+    sam: data/processed/{data_name}/train_sam
   crop_stride: 32
   synthetic:            # RSA circular inclusions (fallback / debug)
     canvas: 512
@@ -74,7 +77,7 @@ sam:
   points_per_side: 16
   merge_iou: 0.3
   n_gt_crops: 5
-  gt_dir: data/processed/sam_gt
+  gt_dir: data/processed/{data_name}/sam_gt
 
 generate:
   n_volumes: 4

@@ -81,7 +81,8 @@ def train(cfg: dict) -> Path:
     train_dir = Path(cfg["data"]["train_dirs"][cfg["data"]["branch"]])
     labels = load_label_map(train_dir / "image.png")
     sampler = RandomCropSampler(labels, l, nc, device, seed=cfg["seed"])
-    log.info("Training data: %s %s, phi=%.4f", train_dir / "image.png", labels.shape, labels.mean())
+    log.info("Dataset %s: %s %s, phi=%.4f", cfg["data"]["name"], train_dir / "image.png", labels.shape,
+             labels.mean())
 
     netG = build_generator(cfg, run_dir).to(device)
     netD = build_discriminator(cfg, run_dir).to(device)
@@ -185,12 +186,13 @@ def main() -> None:
     """CLI entry point."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", required=True)
+    parser.add_argument("--data", action="append", default=[], help="dataset overlay yaml, e.g. configs/data/microlib_000210.yaml")
     parser.add_argument("--epochs", type=int, help="override epochs (e.g. smoke tests)")
     parser.add_argument("--iters-per-epoch", type=int, help="override iters_per_epoch")
     parser.add_argument("--device", help="override device (cuda | cpu)")
     args = parser.parse_args()
 
-    cfg = load_config(args.config)
+    cfg = load_config(args.config, args.data)
     for key, value in (("epochs", args.epochs), ("iters_per_epoch", args.iters_per_epoch),
                        ("device", args.device)):
         if value is not None:

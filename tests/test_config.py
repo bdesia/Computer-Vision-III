@@ -41,3 +41,18 @@ def test_set_seed_is_reproducible():
     set_seed(123)
     b = (random.random(), np.random.rand())
     assert a == b
+
+
+def test_dataset_overlay_and_data_name_paths():
+    synthetic = load_config(CONFIGS / "m1_cnn.yaml")
+    assert synthetic["data"]["name"] == "synthetic"
+    assert synthetic["data"]["train_dirs"]["raw"] == "data/processed/synthetic/train_2d"
+    assert synthetic["paths"]["models"] == "models/synthetic"
+
+    real = load_config(CONFIGS / "m2_swin.yaml", [CONFIGS / "data" / "microlib_000210.yaml"])
+    assert real["run_name"] == "m2_swin"
+    assert real["model"]["discriminator"] == "swin"  # model settings kept
+    assert real["data"]["source"] == "microlib"
+    assert real["data"]["train_dirs"]["sam"] == "data/processed/microlib_000210/train_sam"
+    assert real["paths"]["logs"] == "logs/microlib_000210"
+    assert "{data_name}" not in str(real)

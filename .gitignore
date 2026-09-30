@@ -17,10 +17,12 @@ data/raw/*
 data/interim/*
 data/processed/*
 !data/**/.gitkeep
-!data/processed/sam_gt/
-data/processed/sam_gt/*
-!data/processed/sam_gt/*.png
-!data/processed/sam_gt/README.md
+!data/processed/*/
+data/processed/*/*
+!data/processed/*/sam_gt/
+data/processed/*/sam_gt/*
+!data/processed/*/sam_gt/*.png
+!data/processed/*/sam_gt/README.md
 
 # Model weights and generated volumes
 models/*

@@ -59,32 +59,45 @@ Without a GPU everything runs on CPU (a WARNING is logged); lower `epochs` in th
 
 ## Data
 
+Two datasets are supported. Every command takes an optional dataset overlay with `--data`
+(`DATA=...` in the Makefile); without it the synthetic dataset is used. Each dataset gets its own
+folders (`data/*/<name>/`, `models/<name>/`, `logs/<name>/`) via the `{data_name}` placeholder.
+
 ```bash
-poetry run python -m src.data.make_dataset --config configs/default.yaml   # make data
+poetry run python -m src.data.make_dataset                                              # synthetic
+poetry run python -m src.data.make_dataset --data configs/data/microlib_000210.yaml     # real (main case)
+# make data   /   make data DATA=configs/data/microlib_000210.yaml
 ```
 
-Source is set in `configs/default.yaml → data.source`:
+**Real micrograph — MicroLib 000210** (`configs/data/microlib_000210.yaml`, main case). An optical
+micrograph from the [DoITPoMS micrograph library](https://www.doitpoms.ac.uk/miclib/) as curated in
+[MicroLib](https://microlib.io) (Kench et al., 2022): dark islands in a light matrix. It was chosen at
+random (seed-42 shuffle) among the MicroLib `twophase` entries whose annotated phase gray levels
+differ by ≥ 80, and then checked for isotropy (x/y correlation-length ratio 1.11 after thresholding).
+`make_dataset` downloads it from DoITPoMS, crops away the scale bar (rows 437–525, MicroLib
+`barbox`) and keeps 437 × 800 px at 0.687 µm/px. Otsu gives `φ = 0.232` and 288 crops of 64×64.
+DoITPoMS images are for educational/non-commercial use, so they are downloaded, not committed.
 
-- `synthetic` (current default): non-overlapping discs placed by random sequential adsorption (RSA),
-  target `φ` 0.25, 512², fixed seed. The discs are rendered as a blurred, noisy grayscale micrograph
-  so that segmentation (Otsu for M1/M2, SAM for M3) is non-trivial; the clean mask is kept as ground truth.
-- `slicegan`: a micrograph from `external/SliceGAN/Examples/` (`data.slicegan_example`). Upstream only
-  ships `NMC.tif` (3 phases, out of scope), so this source is only useful with a custom file.
-- `microlib`: one entry from [MicroLib](https://microlib.io), placed manually at `data.raw_path`.
-  TODO: cite the chosen ID.
+**Synthetic** (`data.name: synthetic`, default; debug and sanity check): non-overlapping discs
+placed by random sequential adsorption (RSA), target `φ` 0.25, 512², fixed seed. The discs are
+rendered as a blurred, noisy grayscale micrograph so that segmentation (Otsu for M1/M2, SAM for M3)
+is non-trivial; the clean mask is kept as ground truth. `phi_true = 0.2505`, `phi_train = 0.2540`,
+Otsu IoU vs GT = 0.913, 225 crops.
 
-Outputs:
+(`data.source: slicegan` reads `external/SliceGAN/Examples/<file>`, but upstream only ships
+`NMC.tif`, which has 3 phases and is out of scope.)
+
+Outputs, with `<name>` = `synthetic` or `microlib_000210`:
 
 | Path | Content |
 |------|---------|
-| `data/raw/micro_2d.png` | grayscale micrograph (input to Otsu and SAM) |
-| `data/raw/micro_2d_gt.png`, `micro_2d.json` | synthetic only: clean mask and `phi_true` |
-| `data/interim/micro_2d_gray.png`, `micro_2d_otsu.png` | normalized grayscale and Otsu label map |
-| `data/processed/train_2d/image.png` | M1/M2 training label map (0 = matrix, 1 = inclusion) |
-| `data/processed/train_2d/crops.npy` | 64×64 crops, stride 32, `(N, 64, 64)` uint8 |
-| `data/processed/train_2d/meta.yaml` | `φ`, threshold, crop stats, Otsu IoU vs GT (synthetic) |
-
-With the default config: `phi_true = 0.2505`, `phi_train = 0.2540`, Otsu IoU vs GT = 0.913, 225 crops.
+| `data/raw/<name>/micro_2d.png` | grayscale micrograph (input to Otsu and SAM) |
+| `data/raw/<name>/micro_2d.json` | provenance (MicroLib URL and crop) or synthetic `phi_true` |
+| `data/raw/synthetic/micro_2d_gt.png` | synthetic only: clean ground-truth mask |
+| `data/interim/<name>/micro_2d_gray.png`, `micro_2d_otsu.png` | normalized grayscale and Otsu label map |
+| `data/processed/<name>/train_2d/image.png` | M1/M2 training label map (0 = matrix, 1 = inclusion) |
+| `data/processed/<name>/train_2d/crops.npy` | 64×64 crops, stride 32, `(N, 64, 64)` uint8 |
+| `data/processed/<name>/train_2d/meta.yaml` | `φ`, threshold, crop stats (+ Otsu IoU vs GT for synthetic) |
 
 ## Training
 
@@ -95,6 +108,9 @@ poetry run python -m src.models.train --config configs/m2_swin.yaml         # ma
 poetry run python -m src.models.train --config configs/m3_swin_sam.yaml     # make train-m3
 ```
 
+These train on the synthetic dataset. Append `--data configs/data/microlib_000210.yaml`
+(or `DATA=configs/data/microlib_000210.yaml` with make) to train on the real micrograph.
+
 Quick smoke test (runs on CPU too):
 
 ```bash
@@ -104,10 +120,10 @@ poetry run python -m src.models.train --config configs/m1_cnn.yaml --epochs 2 --
 `--epochs`, `--iters-per-epoch` and `--device` override the yaml. `train.max_minutes` sets an optional
 wall-clock budget (training stops cleanly and checkpoints).
 
-Each run writes to `models/<run_name>/`: `G_last.pt`, `D_last.pt`, the resolved `config.yaml`,
+Each run writes to `models/<name>/<run_name>/`: `G_last.pt`, `D_last.pt`, the resolved `config.yaml`,
 `history.csv` (critic real/fake scores, Wasserstein estimate, gradient penalty, G loss, s/step),
 `previews/epochNNN.png` (central xy/xz/yz slices) and SliceGAN's `slicegan_params.data`.
-Logs go to `logs/<run_name>.log`.
+Logs go to `logs/<name>/<run_name>.log`.
 
 ### How SliceGAN is integrated
 

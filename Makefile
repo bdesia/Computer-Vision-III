@@ -11,6 +11,10 @@ CFG_M1 := configs/m1_cnn.yaml
 CFG_M2 := configs/m2_swin.yaml
 CFG_M3 := configs/m3_swin_sam.yaml
 
+# Dataset overlay, e.g. `make train-m1 DATA=configs/data/microlib_000210.yaml` (default: synthetic)
+DATA ?=
+DATA_ARG := $(if $(DATA),--data $(DATA))
+
 .PHONY: help setup vendor data sam train-m1 train-m2 train-m3 generate eval test
 
 help:
@@ -32,27 +36,27 @@ vendor:
 	git submodule update --init --recursive
 
 data:
-	$(PY) -m src.data.make_dataset --config configs/default.yaml
+	$(PY) -m src.data.make_dataset --config configs/default.yaml $(DATA_ARG)
 
 sam:
-	$(PY) -m src.features.sam_segment --config $(CFG_M3)
+	$(PY) -m src.features.sam_segment --config $(CFG_M3) $(DATA_ARG)
 
 train-m1:
-	$(PY) -m src.models.train --config $(CFG_M1)
+	$(PY) -m src.models.train --config $(CFG_M1) $(DATA_ARG)
 
 train-m2:
-	$(PY) -m src.models.train --config $(CFG_M2)
+	$(PY) -m src.models.train --config $(CFG_M2) $(DATA_ARG)
 
 train-m3:
-	$(PY) -m src.models.train --config $(CFG_M3)
+	$(PY) -m src.models.train --config $(CFG_M3) $(DATA_ARG)
 
 generate:
-	$(PY) -m src.models.generate --config $(CFG_M1)
-	$(PY) -m src.models.generate --config $(CFG_M2)
-	$(PY) -m src.models.generate --config $(CFG_M3)
+	$(PY) -m src.models.generate --config $(CFG_M1) $(DATA_ARG)
+	$(PY) -m src.models.generate --config $(CFG_M2) $(DATA_ARG)
+	$(PY) -m src.models.generate --config $(CFG_M3) $(DATA_ARG)
 
 eval: generate
-	$(PY) -m src.visualization.visualize --configs $(CFG_M1) $(CFG_M2) $(CFG_M3)
+	$(PY) -m src.visualization.visualize --configs $(CFG_M1) $(CFG_M2) $(CFG_M3) $(DATA_ARG)
 
 test:
 	$(PY) -m pytest

@@ -83,3 +83,33 @@ def test_build_dataset_synthetic(tmp_path):
     assert abs(meta["phi_train"] - meta["phi_true"]) < 0.03
     assert meta["otsu_iou_vs_gt"] > 0.85
     assert load_grayscale(cfg["data"]["raw_path"]).shape == (128, 128)
+
+
+def test_download_microlib_crops_scale_bar(tmp_path, monkeypatch):
+    import io
+    import json
+
+    from PIL import Image
+
+    from src.data import make_dataset
+
+    img = np.full((50, 40), 200, dtype=np.uint8)
+    img[45:] = 255  # "scale bar" rows
+    buf = io.BytesIO()
+    Image.fromarray(img).save(buf, format="PNG")
+
+    class _Resp(io.BytesIO):
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    monkeypatch.setattr(make_dataset.urllib.request, "urlopen", lambda url, timeout: _Resp(buf.getvalue()))
+    ml = {"id": "000123", "url": "https://example.org/{id}.jpg", "keep_rows": [0, 45], "keep_cols": [0, 40]}
+    raw = tmp_path / "raw" / "micro_2d.png"
+    make_dataset.download_microlib(ml, raw)
+
+    assert np.asarray(Image.open(raw)).shape == (45, 40)
+    assert (raw.parent / "original_000123.jpg").exists()
+    assert json.loads(raw.with_suffix(".json").read_text())["url"] == "https://example.org/000123.jpg"
