@@ -159,24 +159,23 @@ def plot_training_curves(run_dirs: list[Path], dataset: str, path: str | Path) -
 
 def _isosurface(ax, volume: np.ndarray, color: str) -> None:
     """Draw the inclusion-phase isosurface of a label volume on a 3D axis."""
-    from mpl_toolkits.mplot3d.art3d import Poly3DCollection
     from skimage.measure import marching_cubes
 
     ax.axis("off")
+    ax.set_box_aspect((1, 1, 1))
     if volume.min() == volume.max():  # single-phase volume: no surface to draw
         ax.text2D(0.5, 0.5, "single phase", transform=ax.transAxes, ha="center", color=INK_MUTED)
         return
     padded = np.pad(volume.astype(np.float32), 1)
     verts, faces, _, _ = marching_cubes(padded, 0.5, step_size=2)
-    mesh = Poly3DCollection(verts[faces], facecolor=color, edgecolor="none", alpha=0.9)
-    ax.add_collection3d(mesh)
+    ax.plot_trisurf(verts[:, 0], verts[:, 1], faces, verts[:, 2], color=color, linewidth=0, shade=True)
     n = volume.shape[0] + 2
     ax.set_xlim(0, n), ax.set_ylim(0, n), ax.set_zlim(0, n)
     ax.set_box_aspect((1, 1, 1))
     ax.axis("off")
 
 
-def plot_qualitative_panel(cfgs: list[dict], path: str | Path, crop: int = 128) -> None:
+def plot_qualitative_panel(cfgs: list[dict], path: str | Path, crop: int = 64) -> None:
     """MicroLib Fig. 2 style: training input | SAM overlay (M3) | xy, xz, yz slices | 3D isosurface."""
     import tifffile
 
@@ -190,7 +189,7 @@ def plot_qualitative_panel(cfgs: list[dict], path: str | Path, crop: int = 128) 
         vol_path = sorted((run_dir / "volumes").glob("*.tif"))[0]
         vol = (tifffile.imread(vol_path) > 127).astype(np.uint8)
         z, y, x = (s // 2 for s in vol.shape)
-        panels = [("training input", train)]
+        panels = [(f"training input ({crop}×{crop})", train)]
         overlay = Path(cfg["paths"]["interim"]) / "sam_overlay.png"
         panels.append(("SAM overlay", np.asarray(Image.open(overlay))[:crop, :crop])
                       if data["branch"] == "sam" and overlay.exists() else ("SAM overlay", None))
