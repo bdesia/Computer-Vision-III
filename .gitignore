@@ -53,3 +53,4 @@ docu/
 
 # Web viewer data (derived from generated volumes)
 reports/viewer/viewer_data.json
+reports/viewer/viewer_data.js

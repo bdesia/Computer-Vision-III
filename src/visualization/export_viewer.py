@@ -57,8 +57,11 @@ def export(cfgs: list[dict], out_path: Path) -> dict:
         log.info("%s: %s (%d volumes)", cfg["run_name"], entry["status"], len(entry["volumes"]))
 
     out_path.parent.mkdir(parents=True, exist_ok=True)
-    out_path.write_text(json.dumps(payload, separators=(",", ":")), encoding="utf-8")
-    log.info("Wrote %s (%.0f KB)", out_path, out_path.stat().st_size / 1024)
+    text = json.dumps(payload, separators=(",", ":"))
+    out_path.write_text(text, encoding="utf-8")
+    # Same data as a script, so index.html also works when opened straight from disk (file://)
+    out_path.with_suffix(".js").write_text(f"window.VIEWER_DATA={text};", encoding="utf-8")
+    log.info("Wrote %s (+ .js, %.0f KB)", out_path, out_path.stat().st_size / 1024)
     return payload
 
 
