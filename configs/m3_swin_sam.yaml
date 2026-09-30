@@ -7,5 +7,3 @@ model:
 
 data:
   branch: sam
-
-batch_size: 8

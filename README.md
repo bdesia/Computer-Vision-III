@@ -133,8 +133,8 @@ builds the generator and the CNN critic with upstream's `slicegan_rc_nets` and t
 `src/models/train.py` is a fork of upstream `model.train` with the same WGAN-GP schedule (Adam
 1e-4, β = (0.9, 0.99), λ = 10, 5 critic steps per G step, one isotropic critic shared by the three
 axes). The differences are: config/logging/checkpointing, a pluggable critic (CNN or Swin-T), random
-64×64 crops sampled on the fly on the GPU instead of 28 800 pre-built crops in RAM, and an optional
-cap on the number of fake slices per axis (`train.fake_slices`).
+64×64 crops sampled on the fly on the GPU instead of 28 800 pre-built crops in RAM, and the paper's
+`m_G = 2 m_D` batches with all slices (see below), and rigid augmentation of the real crops.
 
 Upstream only ships `Examples/NMC.tif` (3 phases, out of scope), so the real 2D image has to come
 from MicroLib.
@@ -157,11 +157,15 @@ from MicroLib.
   dropout are off. Patch embedding and stages 1–2 are frozen, stages 3–4, the final norm and the head
   are trained (26.3 M trainable parameters vs 2.8 M for the CNN critic).
 
-**Same training protocol for all models.** Upstream feeds all 512 slices per axis (64 slices ×
-8 volumes) to the critic at every step, which is prohibitive for Swin. Every model (M1 included)
-therefore uses `train.fake_slices: 64` random slices per axis and TF32 matmuls, so M1 vs M2 differs
-only in the critic. Measured on an RTX A2000 12 GB: 0.55 s per G step for M1 and 2.4 s for M2,
-i.e. ~46 min vs ~3.3 h for the default 50 × 100 G steps.
+**Same training protocol for all models (SliceGAN paper, Algorithm 1).** Each critic step generates
+`m_D = 1` volume and shows the critic **all** 64 slices along each of the three axes; each generator
+step uses `m_G = 2 m_D = 2` volumes, again with all slices (the paper finds `m_G = 2 m_D` most
+efficient and that D must see all 64 slices per direction for every path through G to be trained).
+Upstream code instead generates 8 volumes per step; `m_D = 1` keeps the Swin critic affordable while
+preserving the "all slices" rule. Real crops (8 per axis, also used for the gradient penalty as
+upstream) are augmented with random 90° rotations and flips only. TF32 matmuls are enabled for
+every model. Measured on an RTX A2000 12 GB with MicroLib 000210: 0.30 s per G step for M1 and
+1.9 s for M2, i.e. ~25 min vs ~2.6 h for the default 50 × 100 G steps.
 
 ## Evaluation
 

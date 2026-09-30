@@ -42,15 +42,6 @@ def build_discriminator(cfg: dict, run_dir: Path) -> torch.nn.Module:
     raise ValueError(f"Unknown model.discriminator '{kind}' (expected cnn | swin)")
 
 
-def _fake_slices(fake: torch.Tensor, perm, n_slices: int | None, gen: torch.Generator) -> torch.Tensor:
-    """All slices along one axis (upstream), or a random subset of `n_slices` to bound D cost."""
-    slices = volume_to_slices(fake, perm)
-    if n_slices is None or n_slices >= slices.shape[0]:
-        return slices
-    idx = torch.randperm(slices.shape[0], generator=gen, device="cpu")[:n_slices].to(slices.device)
-    return slices[idx]
-
-
 def _save_checkpoint(run_dir: Path, netG, netD, tag: str) -> None:
     """Save G and D state dicts under `run_dir` (tag: 'last' or 'epochXXX')."""
     try:
@@ -61,7 +52,11 @@ def _save_checkpoint(run_dir: Path, netG, netD, tag: str) -> None:
 
 
 def train(cfg: dict) -> Path:
-    """Run WGAN-GP training as in upstream SliceGAN (isotropic: one critic for the three axes)."""
+    """Run WGAN-GP training as in SliceGAN Algorithm 1 (isotropic: one critic for the three axes).
+
+    Each critic step generates m_d volumes and shows the critic all l slices per axis of each; each
+    generator step uses m_g = 2 m_d volumes, again with all slices (Kench & Cooper, 2021, Sec. 3).
+    """
     tcfg = cfg["train"]
     run_dir = Path(cfg["paths"]["models"]) / cfg["run_name"]
     run_dir.mkdir(parents=True, exist_ok=True)
@@ -72,15 +67,16 @@ def train(cfg: dict) -> Path:
     torch.backends.cudnn.benchmark = bool(tcfg.get("cudnn_benchmark", True))
     torch.backends.cuda.matmul.allow_tf32 = bool(tcfg.get("allow_tf32", False))
     l, nc, nz = cfg["img_size"], cfg["n_phases"], cfg["z_channels"]
-    batch_size = cfg["batch_size"]
-    d_batch_size = tcfg.get("d_batch_size", batch_size)
+    m_d, m_g = tcfg["m_d"], tcfg["m_g"]
+    real_batch = tcfg["real_batch"]
     critic_iters = tcfg["critic_iters"]
-    n_fake_slices = tcfg.get("fake_slices")
     max_minutes = tcfg.get("max_minutes")
+    if real_batch > l * m_d:
+        raise ValueError(f"train.real_batch={real_batch} exceeds the {l * m_d} fake slices per axis")
 
     train_dir = Path(cfg["data"]["train_dirs"][cfg["data"]["branch"]])
     labels = load_label_map(train_dir / "image.png")
-    sampler = RandomCropSampler(labels, l, nc, device, seed=cfg["seed"])
+    sampler = RandomCropSampler(labels, l, nc, device, seed=cfg["seed"], augment=cfg["data"]["augment"])
     log.info("Dataset %s: %s %s, phi=%.4f", cfg["data"]["name"], train_dir / "image.png", labels.shape,
              labels.mean())
 
@@ -97,11 +93,12 @@ def train(cfg: dict) -> Path:
         cfg["run_name"], cfg["model"]["discriminator"], device, n_g / 1e6, n_d / 1e6,
     )
     log.info(
-        "epochs=%d x %d G steps, critic_iters=%d, batch=%d, fake slices/axis=%s",
-        cfg["epochs"], cfg["iters_per_epoch"], critic_iters, batch_size, n_fake_slices or "all",
+        "epochs=%d x %d G steps | critic_iters=%d | m_D=%d, m_G=%d volumes (all %d slices/axis) | "
+        "real batch=%d | augment=%s",
+        cfg["epochs"], cfg["iters_per_epoch"], critic_iters, m_d, m_g, l, real_batch,
+        cfg["data"]["augment"],
     )
 
-    slice_gen = torch.Generator().manual_seed(cfg["seed"])
     history_path = run_dir / "history.csv"
     with history_path.open("w", newline="", encoding="utf-8") as fh:
         csv.writer(fh).writerow(HISTORY_FIELDS)
@@ -113,15 +110,16 @@ def train(cfg: dict) -> Path:
     for epoch in range(1, cfg["epochs"] + 1):
         for i in range(1, cfg["iters_per_epoch"] * critic_iters + 1):
             # ---- Critic: one update per axis, same critic for all axes (isotropic)
-            fake = netG(sample_noise(d_batch_size, nz, device)).detach()
+            fake = netG(sample_noise(m_d, nz, device)).detach()
             for perm in SLICE_PERMUTATIONS:
                 netD.zero_grad(set_to_none=True)
-                real = sampler(batch_size)
+                real = sampler(real_batch)
                 out_real = netD(real).view(-1).mean()
-                fake_slices = _fake_slices(fake, perm, n_fake_slices, slice_gen)
+                fake_slices = volume_to_slices(fake, perm)  # all l * m_d slices
                 out_fake = netD(fake_slices).mean()
+                # Upstream GP: real batch vs the first real_batch fake slices
                 gp = calc_gradient_penalty(
-                    netD, real, fake_slices[:batch_size], batch_size, l, device, tcfg["gp_lambda"], nc
+                    netD, real, fake_slices[:real_batch], real_batch, l, device, tcfg["gp_lambda"], nc
                 )
                 (out_fake - out_real + gp).backward()
                 optD.step()
@@ -130,10 +128,10 @@ def train(cfg: dict) -> Path:
             if i % critic_iters != 0:
                 continue
             netG.zero_grad(set_to_none=True)
-            fake = netG(sample_noise(batch_size, nz, device))
+            fake = netG(sample_noise(m_g, nz, device))
             err_g = 0.0
             for perm in SLICE_PERMUTATIONS:
-                err_g = err_g - netD(_fake_slices(fake, perm, n_fake_slices, slice_gen)).mean()
+                err_g = err_g - netD(volume_to_slices(fake, perm)).mean()
             err_g.backward()
             optG.step()
             g_step += 1

@@ -32,7 +32,7 @@ def test_model_configs_inherit_default():
         assert cfg["volume_size"] == 64
         assert cfg["n_phases"] == 2
         assert cfg["model"]["swin"]["backbone"] == "swin_tiny_patch4_window7_224.ms_in1k"
-        assert cfg["train"]["fake_slices"] == 64  # same critic budget for all models
+        assert (cfg["train"]["m_d"], cfg["train"]["m_g"]) == (1, 2)  # m_G = 2 m_D, same for all models
 
 
 def test_set_seed_is_reproducible():

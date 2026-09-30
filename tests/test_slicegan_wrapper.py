@@ -52,3 +52,14 @@ def test_random_crop_sampler_one_hot():
     assert torch.equal(batch.sum(dim=1), torch.ones(6, 64, 64))
     with pytest.raises(ValueError):
         RandomCropSampler(labels[:60, :60], crop=64, n_phases=2, device="cpu", seed=0)
+
+
+def test_random_crop_sampler_augmentation_preserves_phase_counts():
+    rng = np.random.default_rng(1)
+    labels = (rng.random((100, 100)) < 0.3).astype(np.uint8)
+    plain = RandomCropSampler(labels, crop=64, n_phases=2, device="cpu", seed=5)
+    aug = RandomCropSampler(labels, crop=64, n_phases=2, device="cpu", seed=5, augment=True)
+    a, b = plain(16), aug(16)
+    # Same crop positions; rigid rotations/flips keep each crop's phase fraction
+    assert torch.allclose(a[:, 1].mean(dim=(1, 2)), b[:, 1].mean(dim=(1, 2)))
+    assert not torch.equal(a, b)

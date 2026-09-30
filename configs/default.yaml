@@ -4,7 +4,6 @@ img_size: 64            # 2D training crop size fed to D
 volume_size: 64         # generated cube edge (64^3)
 epochs: 50              # raise if GPU available; report the value actually used
 iters_per_epoch: 100    # generator updates per epoch (critic runs critic_iters x this)
-batch_size: 8
 z_channels: 32          # upstream run_slicegan.py value (G architecture is kept unchanged)
 n_phases: 2
 device: cuda            # falls back to cpu (logged as WARNING) if CUDA is unavailable
@@ -33,6 +32,7 @@ data:
     raw: data/processed/{data_name}/train_2d
     sam: data/processed/{data_name}/train_sam
   crop_stride: 32
+  augment: true         # real crops: random 90-degree rotations + flips (rigid D4 symmetries only)
   synthetic:            # RSA circular inclusions (fallback / debug)
     canvas: 512
     phi_target: 0.25
@@ -64,8 +64,11 @@ train:
   betas: [0.9, 0.99]
   critic_iters: 5       # D updates per G update (WGAN-GP)
   gp_lambda: 10
-  d_batch_size: 8       # volumes generated per critic step (upstream D_batch_size)
-  fake_slices: 64       # random fake slices per axis fed to D, same for all models; null = all 512 (upstream)
+  # SliceGAN Algorithm 1 (paper Sec. 3): D sees ALL l slices per axis of every generated volume,
+  # and the generator batch is twice the critic batch (m_G = 2 m_D). Same protocol for M1/M2/M3.
+  m_d: 1                # volumes per critic step  -> 64 fake slices per axis
+  m_g: 2                # volumes per generator step (m_G = 2 m_D) -> 128 fake slices per axis
+  real_batch: 8         # real 64x64 crops per axis per critic step, also the GP pairs (upstream batch_size)
   allow_tf32: true      # TF32 matmuls on Ampere+ (applied to every model)
   max_minutes: null     # optional wall-clock budget; stops cleanly and checkpoints
   cudnn_benchmark: true
@@ -80,11 +83,12 @@ sam:
   gt_dir: data/processed/{data_name}/sam_gt
 
 generate:
-  n_volumes: 4
-  seeds: [0, 1, 2, 3]
+  seeds: [0, 1, 2, 3]   # one 64^3 volume per seed (len = metrics.n_volumes_eval)
 
 metrics:
-  s2_rmax: 32
+  s2_rmax: 32           # S2(r) and L(r) evaluated for r = 0..32 px
+  lineal_path: true     # also compute the lineal-path function L(r) of the inclusion phase
+  n_volumes_eval: 4     # generated volumes per model (N >= 4)
 
 logging:
   level: INFO

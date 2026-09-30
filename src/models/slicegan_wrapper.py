@@ -96,14 +96,15 @@ def load_label_map(path: str | Path) -> np.ndarray:
 class RandomCropSampler:
     """Samples one-hot random crops from a 2D label map on the target device (replaces upstream batch())."""
 
-    def __init__(self, labels: np.ndarray, crop: int, n_phases: int, device, seed: int):
-        """Keep the label map on `device` and a dedicated RNG for crop positions."""
+    def __init__(self, labels: np.ndarray, crop: int, n_phases: int, device, seed: int, augment: bool = False):
+        """Keep the label map on `device` and a dedicated RNG for crop positions (and augmentation)."""
         if min(labels.shape) < crop + 2:
             raise ValueError(f"Label map {labels.shape} too small for {crop}x{crop} crops")
         self.labels = torch.as_tensor(labels, dtype=torch.long, device=device)
         self.crop = crop
         self.n_phases = n_phases
         self.rng = np.random.default_rng(seed)
+        self.augment = augment
 
     def __call__(self, batch_size: int) -> torch.Tensor:
         """Return a (batch, n_phases, crop, crop) float one-hot batch."""
@@ -112,5 +113,11 @@ class RandomCropSampler:
         # Same bounds as upstream preprocessing.batch for 2D images
         xs = self.rng.integers(1, h - l - 1, size=batch_size)
         ys = self.rng.integers(1, w - l - 1, size=batch_size)
-        crops = torch.stack([self.labels[x : x + l, y : y + l] for x, y in zip(xs, ys)])
+        crops = [self.labels[x : x + l, y : y + l] for x, y in zip(xs, ys)]
+        if self.augment:  # rigid symmetries only: random 90-degree rotation + horizontal flip (D4 group)
+            ks = self.rng.integers(0, 4, size=batch_size)
+            flips = self.rng.random(batch_size) < 0.5
+            crops = [torch.rot90(c, int(k), dims=(0, 1)) for c, k in zip(crops, ks)]
+            crops = [torch.flip(c, dims=(1,)) if f else c for c, f in zip(crops, flips)]
+        crops = torch.stack(crops)
         return F.one_hot(crops, self.n_phases).permute(0, 3, 1, 2).float()
