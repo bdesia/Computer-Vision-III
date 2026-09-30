@@ -46,3 +46,6 @@ logs/*
 Thumbs.db
 .vscode/
 .idea/
+
+# Reference papers (local only; not redistributed)
+docu/
