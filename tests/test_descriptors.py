@@ -1,11 +1,15 @@
-"""Tests for phi and S2 against images with known analytic correlation functions."""
+"""Tests for phi, S2 and lineal path against images with known analytic answers."""
 
 import numpy as np
 import pytest
 
 from src.features.descriptors import (
     describe_volumes,
+    lineal_path,
+    lineal_path_axis,
+    lineal_path_volume,
     phase_fraction,
+    relative_error,
     s2_mae,
     s2_map,
     s2_radial,
@@ -118,5 +122,53 @@ def test_describe_volumes_on_isotropic_random_volumes():
     assert out["abs_dphi"] < 0.01
     assert out["s2_mae"] < 0.01
     assert out["s2_train"].shape == out["s2_generated"].shape == (9,)
+    assert out["s2_err"] < 0.05 and out["L_mae"] < 0.01
+    for plane in ("xy", "xz", "yz"):
+        assert out[f"phi_{plane}"] == pytest.approx(out["phi_mean"])  # all slices -> volume phi
+        assert out[f"s2_mae_{plane}"] < 0.01 and out[f"L_mae_{plane}"] < 0.01
     with pytest.raises(ValueError):
         describe_volumes([], img, rmax=8)
+
+
+def test_relative_error():
+    ref = np.array([0.2, 0.1, 0.1])
+    assert relative_error(ref, ref) == 0.0
+    assert relative_error(ref + 0.02, ref) == pytest.approx(0.02 / (0.4 / 3))
+    with pytest.raises(ValueError):
+        relative_error(ref, np.zeros(3))
+
+
+def test_lineal_path_exact_on_single_row():
+    row = np.array([[1, 1, 1, 0, 1, 1, 0, 0, 0, 0]])  # runs of 3 and 2, length 10
+    lp = lineal_path_axis(row, rmax=3, axis=-1)
+    # valid positions: 10, 9, 8, 7; segments fully inside: 5, 3 (2+1), 1 (1+0), 0
+    assert np.allclose(lp, [5 / 10, 3 / 9, 1 / 8, 0 / 7])
+
+
+def test_lineal_path_limits():
+    rng = np.random.default_rng(5)
+    p = 0.4
+    img = (rng.random((256, 256)) < p).astype(np.uint8)
+    lp = lineal_path(img, rmax=4)
+    assert lp[0] == pytest.approx(phase_fraction(img))  # L(0) = phi
+    assert np.allclose(lp, p ** np.arange(1, 6), atol=0.01)  # iid pixels: L(r) = p^(r+1)
+    assert np.allclose(lineal_path(np.ones((16, 16)), rmax=8), 1.0)
+    assert np.all(np.diff(lp) <= 0)  # non-increasing
+
+
+def test_lineal_path_stripes_directional():
+    img = _stripes(64, width=4)  # horizontal stripes: long along x, 4 px across y
+    along_x = lineal_path_axis(img, rmax=10, axis=-1)
+    along_y = lineal_path_axis(img, rmax=10, axis=-2)
+    assert np.allclose(along_x, 0.5)
+    assert along_y[4] == 0.0 and along_y[3] > 0  # no 5-pixel vertical segment fits in a 4-px stripe
+
+
+def test_lineal_path_volume_planes_of_extruded_image():
+    rng = np.random.default_rng(6)
+    img = (rng.random((32, 32)) < 0.5).astype(np.uint8)
+    vol = np.repeat(img[None], 32, axis=0)  # constant along z
+    curves = lineal_path_volume(vol, rmax=6)
+    assert np.allclose(curves["xy"], lineal_path(img, 6))
+    # Along z every column is constant, so the xz/yz planes are more connected than xy
+    assert curves["xz"][6] > curves["xy"][6] and curves["yz"][6] > curves["xy"][6]

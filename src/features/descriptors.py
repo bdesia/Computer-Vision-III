@@ -1,4 +1,4 @@
-"""Microstructure descriptors: phase fraction (phi) and radially averaged two-point correlation (S2)."""
+"""Microstructure descriptors: phase fraction (phi), two-point correlation S2(r) and lineal path L(r)."""
 
 from __future__ import annotations
 
@@ -93,34 +93,109 @@ def s2_volume(volume: np.ndarray, rmax: int, phase: int = 1) -> dict[str, np.nda
 
 
 def s2_mae(s2_a: np.ndarray, s2_b: np.ndarray) -> float:
-    """Mean absolute error between two S2(r) curves over r = 0..rmax."""
+    """Mean absolute error between two descriptor curves (S2 or L) over r = 0..rmax."""
     s2_a, s2_b = np.asarray(s2_a), np.asarray(s2_b)
     if s2_a.shape != s2_b.shape:
-        raise ValueError(f"S2 curves differ in shape: {s2_a.shape} vs {s2_b.shape}")
+        raise ValueError(f"Curves differ in shape: {s2_a.shape} vs {s2_b.shape}")
     return float(np.abs(s2_a - s2_b).mean())
 
 
+def relative_error(generated: np.ndarray, reference: np.ndarray) -> float:
+    """Micro3Diff-style error rate: mean|gen - ref| / mean|ref|."""
+    denom = float(np.abs(np.asarray(reference)).mean())
+    if denom == 0:
+        raise ValueError("Reference curve is identically zero")
+    return s2_mae(generated, reference) / denom
+
+
+def lineal_path_axis(images: np.ndarray, rmax: int, axis: int, phase: int = 1) -> np.ndarray:
+    """Lineal path L(r), r = 0..rmax, along one array axis (non-periodic).
+
+    L(r) is the probability that a segment of r + 1 consecutive pixels along `axis` lies entirely in
+    `phase`, averaged over all valid segment positions in the array (any number of leading dims).
+    """
+    x = np.moveaxis(indicator(images, phase), axis, -1).astype(np.int32)
+    n = x.shape[-1]
+    if n <= rmax:
+        raise ValueError(f"Axis length {n} too small for rmax={rmax}")
+    cs = np.concatenate([np.zeros((*x.shape[:-1], 1), dtype=np.int32), np.cumsum(x, axis=-1)], axis=-1)
+    out = np.empty(rmax + 1)
+    for r in range(rmax + 1):
+        window = cs[..., r + 1 :] - cs[..., : n - r]  # phase pixels in each (r+1)-pixel segment
+        out[r] = float((window == r + 1).mean())
+    return out
+
+
+def lineal_path(images: np.ndarray, rmax: int, phase: int = 1) -> np.ndarray:
+    """In-plane lineal path of 2D image(s) (..., H, W): mean of the curves along H and W."""
+    return 0.5 * (lineal_path_axis(images, rmax, -2, phase) + lineal_path_axis(images, rmax, -1, phase))
+
+
+# In-plane array axes of each slice orientation for a (Z, Y, X) volume
+_PLANE_AXES = {"xy": (1, 2), "xz": (0, 2), "yz": (0, 1)}
+
+
+def lineal_path_volume(volume: np.ndarray, rmax: int, phase: int = 1) -> dict[str, np.ndarray]:
+    """Lineal path per slice orientation (mean of its two in-plane axes) plus the mean over the three."""
+    per_axis = [lineal_path_axis(volume, rmax, a, phase) for a in range(3)]
+    curves = {name: 0.5 * (per_axis[a] + per_axis[b]) for name, (a, b) in _PLANE_AXES.items()}
+    curves["mean"] = np.mean(per_axis, axis=0)
+    return curves
+
+
 def describe_volumes(
-    volumes: list[np.ndarray], image_2d: np.ndarray, rmax: int, phase: int = 1
+    volumes: list[np.ndarray],
+    image_2d: np.ndarray,
+    rmax: int,
+    phase: int = 1,
+    lineal: bool = True,
 ) -> dict:
-    """Compare generated volumes against the 2D training image: phi stats, |dphi| and S2 MAE."""
+    """Compare generated volumes against the 2D training image.
+
+    Returns phi stats and |dphi|; S2 MAE and error rate; lineal-path MAE and error rate; and, as a 3D
+    isotropy check, phi, S2 MAE and L MAE per slice orientation. Per-orientation phi averaged over all
+    slices equals the volume phi by construction, so `phi_slice_std_<plane>` (spread of slice phi
+    along the normal axis) is also returned to expose gradients along one direction.
+    """
     if not volumes:
         raise ValueError("No volumes to describe")
     phi_ref = phase_fraction(image_2d, phase)
     s2_ref = s2_radial(image_2d, rmax, phase)
 
     phis = np.array([phase_fraction(v, phase) for v in volumes])
-    s2_curves = np.stack([s2_volume(v, rmax, phase)["mean"] for v in volumes])
-    s2_mean = s2_curves.mean(axis=0)
-    per_volume_mae = np.array([s2_mae(c, s2_ref) for c in s2_curves])
-    return {
+    s2_by_vol = [s2_volume(v, rmax, phase) for v in volumes]
+    s2_mean = {k: np.mean([c[k] for c in s2_by_vol], axis=0) for k in ("xy", "xz", "yz", "mean")}
+    per_volume_mae = np.array([s2_mae(c["mean"], s2_ref) for c in s2_by_vol])
+
+    out = {
         "n_volumes": len(volumes),
         "phi_train": phi_ref,
         "phi_mean": float(phis.mean()),
         "phi_std": float(phis.std()),
         "abs_dphi": float(abs(phis.mean() - phi_ref)),
-        "s2_mae": s2_mae(s2_mean, s2_ref),
+        "s2_mae": s2_mae(s2_mean["mean"], s2_ref),
         "s2_mae_std": float(per_volume_mae.std()),
+        "s2_err": relative_error(s2_mean["mean"], s2_ref),
         "s2_train": s2_ref,
-        "s2_generated": s2_mean,
+        "s2_generated": s2_mean["mean"],
     }
+    for plane, slices_axis in (("xy", 0), ("xz", 1), ("yz", 2)):
+        slice_phi = np.stack([indicator(v, phase).mean(axis=tuple(a for a in range(3) if a != slices_axis))
+                              for v in volumes])
+        out[f"phi_{plane}"] = float(slice_phi.mean())
+        out[f"phi_slice_std_{plane}"] = float(slice_phi.std(axis=1).mean())
+        out[f"s2_mae_{plane}"] = s2_mae(s2_mean[plane], s2_ref)
+
+    if lineal:
+        l_ref = lineal_path(image_2d, rmax, phase)
+        l_by_vol = [lineal_path_volume(v, rmax, phase) for v in volumes]
+        l_mean = {k: np.mean([c[k] for c in l_by_vol], axis=0) for k in ("xy", "xz", "yz", "mean")}
+        out.update({
+            "L_mae": s2_mae(l_mean["mean"], l_ref),
+            "L_err": relative_error(l_mean["mean"], l_ref),
+            "L_train": l_ref,
+            "L_generated": l_mean["mean"],
+        })
+        for plane in ("xy", "xz", "yz"):
+            out[f"L_mae_{plane}"] = s2_mae(l_mean[plane], l_ref)
+    return out
