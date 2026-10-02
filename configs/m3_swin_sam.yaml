@@ -7,3 +7,8 @@ model:
 
 data:
   branch: sam
+
+# Lower critic learning rate for the pretrained Swin backbone: with the shared 1e-4 the Swin critic
+# oscillated between realistic and empty volumes (run v1). G keeps lr_g = 1e-4 as in M1.
+train:
+  lr_d: 2.0e-5

@@ -72,6 +72,10 @@ train:
   allow_tf32: true      # TF32 matmuls on Ampere+ (applied to every model)
   max_minutes: null     # optional wall-clock budget; stops cleanly and checkpoints
   cudnn_benchmark: true
+  # Checkpoint selection (same for all models): every select_every epochs, G generates volumes from
+  # held-out seeds; the epoch with the lowest S2 MAE vs the model's own training image is kept as G_best.pt
+  select_every: 1
+  select_seeds: [1000, 1001]
   log_every: 10         # G steps
   ckpt_every: 5         # epochs
 
@@ -92,6 +96,7 @@ sam:
   gt_dir: data/processed/{data_name}/sam_gt
 
 generate:
+  checkpoint: best      # best (selected on held-out seeds) | last
   seeds: [0, 1, 2, 3]   # one 64^3 volume per seed (len = metrics.n_volumes_eval)
 
 metrics:

@@ -67,7 +67,11 @@ def evaluate(cfg: dict) -> dict:
         raise ValueError(f"generate.seeds has {len(seeds)} entries, metrics.n_volumes_eval="
                          f"{cfg['metrics']['n_volumes_eval']}")
 
-    netG = load_generator(cfg, run_dir, device)
+    tag = cfg["generate"].get("checkpoint", "last")
+    if not (run_dir / f"G_{tag}.pt").exists() and tag != "last":
+        log.warning("No G_%s.pt in %s (older run?); using G_last.pt", tag, run_dir)
+        tag = "last"
+    netG = load_generator(cfg, run_dir, device, checkpoint=f"G_{tag}.pt")
     volumes = generate_volumes(netG, seeds, cfg["z_channels"], device)
     vol_dir = run_dir / "volumes"
     vol_dir.mkdir(parents=True, exist_ok=True)
@@ -80,7 +84,9 @@ def evaluate(cfg: dict) -> dict:
                        f"{cfg['run_name']} ({cfg['data']['name']}) seed {seeds[0]}")
 
     summary = {"dataset": cfg["data"]["name"], "model": cfg["run_name"], "seeds": list(seeds),
-               "references": {}}
+               "checkpoint": tag, "references": {}}
+    if (run_dir / "selection.yaml").exists():
+        summary["selection"] = yaml.safe_load((run_dir / "selection.yaml").read_text(encoding="utf-8"))
     curves = {}
     for ref_name, ref in references(cfg).items():
         out = describe_volumes(volumes, ref, rmax, lineal=cfg["metrics"]["lineal_path"])

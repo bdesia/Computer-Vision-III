@@ -7,11 +7,14 @@ import csv
 import time
 from pathlib import Path
 
+import numpy as np
 import torch
 import torch.optim as optim
 import yaml
 
+from src.features.descriptors import phase_fraction, s2_mae, s2_radial, s2_volume
 from src.models.discriminator_cnn import build_cnn_discriminator
+from src.models.generate import generate_volumes
 from src.models.slicegan_wrapper import (
     SLICE_PERMUTATIONS,
     RandomCropSampler,
@@ -28,6 +31,7 @@ from src.visualization.visualize import plot_volume_slices
 log = get_logger(__name__)
 
 HISTORY_FIELDS = ("epoch", "g_step", "d_real", "d_fake", "wasserstein", "gp", "g_loss", "sec_per_g_step")
+SELECTION_FIELDS = ("epoch", "g_step", "val_phi", "val_s2_mae", "best")
 
 
 def build_discriminator(cfg: dict, run_dir: Path) -> torch.nn.Module:
@@ -40,6 +44,20 @@ def build_discriminator(cfg: dict, run_dir: Path) -> torch.nn.Module:
 
         return build_swin_discriminator(cfg)
     raise ValueError(f"Unknown model.discriminator '{kind}' (expected cnn | swin)")
+
+
+def validation_score(netG, cfg: dict, s2_ref: np.ndarray, device) -> dict:
+    """Score G on held-out latent seeds: mean phi and S2 MAE vs the model's own 2D training image.
+
+    The seeds (`train.select_seeds`) differ from the evaluation seeds (`generate.seeds`), so the
+    volumes used to pick the checkpoint are never the ones that are reported.
+    """
+    netG.eval()
+    volumes = generate_volumes(netG, cfg["train"]["select_seeds"], cfg["z_channels"], device)
+    netG.train()
+    rmax = cfg["metrics"]["s2_rmax"]
+    s2 = np.mean([s2_volume(v, rmax)["mean"] for v in volumes], axis=0)
+    return {"val_phi": float(np.mean([phase_fraction(v) for v in volumes])), "val_s2_mae": s2_mae(s2, s2_ref)}
 
 
 def _save_checkpoint(run_dir: Path, netG, netD, tag: str) -> None:
@@ -102,6 +120,11 @@ def train(cfg: dict) -> Path:
     history_path = run_dir / "history.csv"
     with history_path.open("w", newline="", encoding="utf-8") as fh:
         csv.writer(fh).writerow(HISTORY_FIELDS)
+    selection_path = run_dir / "selection.csv"
+    with selection_path.open("w", newline="", encoding="utf-8") as fh:
+        csv.writer(fh).writerow(SELECTION_FIELDS)
+    s2_ref = s2_radial(labels, cfg["metrics"]["s2_rmax"])
+    best = {"val_s2_mae": float("inf"), "epoch": None}
 
     start = time.time()
     last_log = start
@@ -173,10 +196,29 @@ def train(cfg: dict) -> Path:
             plot_volume_slices(vol, run_dir / "previews" / f"epoch{epoch:03d}.png",
                                f"{cfg['run_name']} epoch {epoch} (phi={vol.mean():.3f})")
             log.info("Checkpoint saved (epoch %d, preview phi=%.4f)", epoch, vol.mean())
+        # ---- Checkpoint selection on held-out seeds (same rule for every model)
+        if epoch % tcfg["select_every"] == 0 or epoch == cfg["epochs"] or stop:
+            score = validation_score(netG, cfg, s2_ref, device)
+            improved = score["val_s2_mae"] < best["val_s2_mae"]
+            if improved:
+                best = {**score, "epoch": epoch, "g_step": g_step}
+                _save_checkpoint(run_dir, netG, netD, "best")
+            with selection_path.open("a", newline="", encoding="utf-8") as fh:
+                csv.DictWriter(fh, SELECTION_FIELDS).writerow(
+                    {"epoch": epoch, "g_step": g_step, **score, "best": int(improved)})
+            log.info("Selection ep %d: val phi=%.4f S2 MAE=%.4f%s (best: ep %s, %.4f)", epoch,
+                     score["val_phi"], score["val_s2_mae"], " *" if improved else "", best["epoch"],
+                     best["val_s2_mae"])
         if stop:
             break
 
-    log.info("Training finished in %.1f min -> %s", (time.time() - start) / 60, run_dir)
+    with (run_dir / "selection.yaml").open("w", encoding="utf-8") as fh:
+        yaml.safe_dump({"best_epoch": best["epoch"], "best_g_step": best.get("g_step"),
+                        "val_phi": best.get("val_phi"), "val_s2_mae": best["val_s2_mae"],
+                        "select_seeds": list(tcfg["select_seeds"]), "criterion": "S2 MAE vs own training image"},
+                       fh, sort_keys=False)
+    log.info("Training finished in %.1f min -> %s (best checkpoint: epoch %s, val S2 MAE %.4f)",
+             (time.time() - start) / 60, run_dir, best["epoch"], best["val_s2_mae"])
     return run_dir
 
 

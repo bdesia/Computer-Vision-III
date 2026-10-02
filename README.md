@@ -167,6 +167,22 @@ upstream) are augmented with random 90° rotations and flips only. TF32 matmuls 
 every model. Measured on an RTX A2000 12 GB with MicroLib 000210: 0.30 s per G step for M1 and
 1.9 s for M2, i.e. ~25 min vs ~2.6 h for the default 50 × 100 G steps.
 
+**Run v2: Swin critic learning rate and checkpoint selection.** In the first full run (v1, kept in
+`models/archive_v1/`, `reports/metrics_v1.csv`, `reports/figures/v1/`) the Swin critic with the shared
+`lr_d = 1e-4` oscillated: M2 and M3 alternated between realistic and almost empty volumes every few
+epochs and ended collapsed on MicroLib, while the CNN critic was stable. v2 therefore changes two
+things:
+
+- **Swin critic `lr_d = 2e-5`** (M2, M3 only; `configs/m2_swin.yaml`, `m3_swin_sam.yaml`), the usual
+  smaller step for a pretrained transformer. The generator schedule (`lr_g = 1e-4`) is unchanged, so
+  M1 vs M2 now differs in the critic architecture *and* its learning rate.
+- **Checkpoint selection, same rule for all models.** After every epoch, G generates volumes from two
+  held-out seeds (`train.select_seeds`, never used for evaluation); the epoch with the lowest S₂ MAE vs
+  the model's own training image is saved as `G_best.pt` (`selection.csv`, `selection.yaml`).
+  `generate.checkpoint: best` evaluates that checkpoint on the evaluation seeds. Selection and
+  evaluation use the same 2D reference image, so absolute errors are slightly optimistic; the bias is
+  the same for all models.
+
 ### SAM phase front-end (M3)
 
 `src/features/sam_segment.py` segments the raw grayscale micrograph with SAM ViT-B

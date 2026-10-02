@@ -56,3 +56,14 @@ def test_dataset_overlay_and_data_name_paths():
     assert real["data"]["train_dirs"]["sam"] == "data/processed/microlib_000210/train_sam"
     assert real["paths"]["logs"] == "logs/microlib_000210"
     assert "{data_name}" not in str(real)
+
+
+def test_only_swin_critics_use_lower_lr_and_all_select_best():
+    lrs = {name: load_config(CONFIGS / f"{name}.yaml")["train"] for name in ("m1_cnn", "m2_swin", "m3_swin_sam")}
+    assert lrs["m1_cnn"]["lr_d"] == 1e-4
+    assert lrs["m2_swin"]["lr_d"] == lrs["m3_swin_sam"]["lr_d"] == 2e-5
+    assert {t["lr_g"] for t in lrs.values()} == {1e-4}  # generator schedule identical
+    for name in lrs:
+        cfg = load_config(CONFIGS / f"{name}.yaml")
+        assert cfg["generate"]["checkpoint"] == "best"
+        assert not set(cfg["train"]["select_seeds"]) & set(cfg["generate"]["seeds"])  # held-out seeds
