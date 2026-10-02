@@ -57,14 +57,14 @@ model:
     upsample: bilinear  # only used when input_size != img_size
     pretrained: true
     trainable_stages: [3, 4]   # train head + last stages; patch embed and stages 1-2 frozen
-    isn: false          # ViTGAN improved spectral norm on the trainable linear layers
+    isn: false          # ViTGAN improved spectral norm on the trainable linear layers (tried in v3; off)
 
 train:
   lr_g: 0.0001
   lr_d: 0.0001
   betas: [0.9, 0.99]
   betas_d: null         # optional critic-only Adam betas; null = same as betas
-  ema_decay: 0.999      # sample/select/save an EMA of G's weights (ViTGAN, all models); null = off
+  ema_decay: null       # e.g. 0.999: EMA of G's weights (ViTGAN); off in the final runs (tried in v3)
   critic_iters: 5       # D updates per G update (WGAN-GP)
   gp_lambda: 10
   # SliceGAN Algorithm 1 (paper Sec. 3): D sees ALL l slices per axis of every generated volume,

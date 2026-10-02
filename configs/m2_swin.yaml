@@ -5,14 +5,12 @@ run_name: m2_swin
 data:
   branch: raw
 
-# Swin critic stabilization (run v3). v1 (lr_d 1e-4) and v2 (lr_d 2e-5 alone) oscillated between
-# realistic and empty volumes. Following ViTGAN (Lee et al., ICLR 2022): improved spectral norm on the
-# trainable layers and Adam beta1 = 0 for the critic. G keeps lr_g = 1e-4 and the shared betas as in M1.
+# Swin critic learning rate (final setup = run v2). With the shared lr_d = 1e-4 (v1) the Swin critic
+# oscillated between realistic and empty volumes; 2e-5 still oscillates but reaches M1-level epochs,
+# which best-checkpoint selection keeps. ViTGAN stabilizers (ISN, Adam beta1 = 0, G EMA; v3) and a
+# smaller critic (stage 4 only) were tried and performed worse; see README.
 model:
   discriminator: swin
-  swin:
-    isn: true
 
 train:
   lr_d: 2.0e-5
-  betas_d: [0.0, 0.99]

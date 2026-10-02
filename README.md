@@ -167,31 +167,28 @@ upstream) are augmented with random 90° rotations and flips only. TF32 matmuls 
 every model. Measured on an RTX A2000 12 GB with MicroLib 000210: 0.30 s per G step for M1 and
 1.9 s for M2, i.e. ~25 min vs ~2.6 h for the default 50 × 100 G steps.
 
-**Swin critic stabilization (runs v1 → v3).** With the shared settings (v1, `lr_d = 1e-4`) the Swin
-critic oscillated: M2 and M3 alternated between realistic and almost empty volumes every few epochs and
-ended collapsed on MicroLib, while the CNN critic was stable. Lowering the critic learning rate alone
-(v2, `lr_d = 2e-5`) only slowed the oscillation (M2 collapsed to φ ≈ 0 at epochs 4–5, then recovered).
-This matches ViTGAN (Lee et al., ICLR 2022): transformer discriminators train "in a healthy manner"
-at first and become unstable later because dot-product self-attention is not Lipschitz, and gradient
-penalty alone does not fix it. The final setup (v3) therefore uses, for the Swin critic only:
+**Swin critic stabilization.** Transformer critics are known to make GAN training unstable
+(ViTGAN, Lee et al., ICLR 2022). Four settings were tried on MicroLib 000210, scoring the generator
+after every epoch on two held-out seeds (φ and S₂ MAE vs the training image, target φ = 0.232):
 
-- **improved spectral normalization** (ViTGAN Eq. 7) on every trainable linear layer,
-  `W → σ(W_init) · W / σ(W)`, which pins each layer at its pretrained scale;
-- **Adam β = (0, 0.99)** for the critic (ViTGAN / StyleGAN2 practice) and `lr_d = 2e-5`.
+| Run | Swin critic setting | Epochs 1–12 (held-out φ, S₂ MAE) | Outcome |
+|-----|---------------------|-----------------------------------|---------|
+| v1 | shared `lr_d = 1e-4` (as M1), last checkpoint | realistic at epoch 10 (φ 0.24), empty at 15 | oscillates; ended collapsed (φ 0.003) |
+| v2 | `lr_d = 2e-5` | empty at epochs 4–5, then φ 0.22–0.26, S₂ MAE 0.010 at 9–11 | oscillates, but reaches M1-level epochs |
+| v3 | v2 + ViTGAN: improved spectral norm, Adam β = (0, 0.99), G EMA 0.999 | φ 0.002–0.08 almost throughout | critic too strong; worse |
+| probe | v2 + only Swin stage 4 trainable | φ 0.08–0.29, best S₂ MAE 0.037 | no full collapse, but blurrier; worse |
 
-and, for **all** models:
+**Final setup (= v2):** Swin critic `lr_d = 2e-5` with the shared Adam betas; generator, its optimizer
+and everything else identical to M1. Because the Swin runs still oscillate, every model uses
+**checkpoint selection**: after every epoch G generates volumes from two held-out seeds
+(`train.select_seeds`, never used for evaluation) and the epoch with the lowest S₂ MAE vs the model's
+own training image is saved as `G_best.pt` and evaluated (`generate.checkpoint: best`). Selection and
+evaluation use the same 2D reference, so absolute errors are slightly optimistic, equally for all
+models. The ViTGAN stabilizers stay in the code behind switches (`model.swin.isn`, `train.betas_d`,
+`train.ema_decay`), off by default.
 
-- an **EMA of the generator weights** (decay 0.999, ViTGAN) used for previews, selection and
-  evaluation; the generator architecture and its optimizer are unchanged;
-- **checkpoint selection**: after every epoch, G generates volumes from two held-out seeds
-  (`train.select_seeds`, never used for evaluation); the epoch with the lowest S₂ MAE vs the model's
-  own training image is saved as `G_best.pt` and evaluated (`generate.checkpoint: best`). Selection
-  and evaluation use the same 2D reference, so absolute errors are slightly optimistic, equally for
-  all models.
-
-M1 vs M2 therefore differs in the critic architecture and its regularization/optimizer, never in G.
-Archived runs: `models/archive_v1/` (+ `reports/metrics_v1.csv`, `reports/figures/v1/`) and
-`models/archive_v2/` (partial: MicroLib M1 and the first 12 epochs of M2).
+Archived runs: `models/archive_v1/` (+ `reports/metrics_v1.csv`, `reports/figures/v1/`),
+`models/archive_v2/` and `models/archive_v3/` (partial, MicroLib).
 
 ### SAM phase front-end (M3)
 
