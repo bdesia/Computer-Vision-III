@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import csv
 import time
 from pathlib import Path
@@ -44,6 +45,16 @@ def build_discriminator(cfg: dict, run_dir: Path) -> torch.nn.Module:
 
         return build_swin_discriminator(cfg)
     raise ValueError(f"Unknown model.discriminator '{kind}' (expected cnn | swin)")
+
+
+@torch.no_grad()
+def update_ema(ema: torch.nn.Module, model: torch.nn.Module, decay: float, step: int) -> None:
+    """EMA of G's parameters with the usual warm-up min(decay, (1+t)/(10+t)); buffers are copied."""
+    d = min(decay, (1 + step) / (10 + step))
+    for p_ema, p in zip(ema.parameters(), model.parameters()):
+        p_ema.lerp_(p, 1.0 - d)
+    for b_ema, b in zip(ema.buffers(), model.buffers()):
+        b_ema.copy_(b)
 
 
 def validation_score(netG, cfg: dict, s2_ref: np.ndarray, device) -> dict:
@@ -99,6 +110,9 @@ def train(cfg: dict) -> Path:
              labels.mean())
 
     netG = build_generator(cfg, run_dir).to(device)
+    ema_decay = tcfg.get("ema_decay")
+    # Generator used for previews, selection and saved checkpoints: an EMA copy when enabled (ViTGAN)
+    netG_eval = copy.deepcopy(netG).requires_grad_(False) if ema_decay else netG
     netD = build_discriminator(cfg, run_dir).to(device)
     optG = optim.Adam(netG.parameters(), lr=tcfg["lr_g"], betas=tuple(tcfg["betas"]))
     betas_d = tuple(tcfg.get("betas_d") or tcfg["betas"])  # critic-only override; default = shared betas
@@ -111,9 +125,9 @@ def train(cfg: dict) -> Path:
     )
     log.info(
         "epochs=%d x %d G steps | critic_iters=%d | m_D=%d, m_G=%d volumes (all %d slices/axis) | "
-        "real batch=%d | augment=%s | lr_g=%g lr_d=%g betas_d=%s",
+        "real batch=%d | augment=%s | lr_g=%g lr_d=%g betas_d=%s | G EMA=%s",
         cfg["epochs"], cfg["iters_per_epoch"], critic_iters, m_d, m_g, l, real_batch,
-        cfg["data"]["augment"], tcfg["lr_g"], tcfg["lr_d"], betas_d,
+        cfg["data"]["augment"], tcfg["lr_g"], tcfg["lr_d"], betas_d, ema_decay or "off",
     )
 
     history_path = run_dir / "history.csv"
@@ -157,6 +171,8 @@ def train(cfg: dict) -> Path:
             err_g.backward()
             optG.step()
             g_step += 1
+            if ema_decay:
+                update_ema(netG_eval, netG, ema_decay, g_step)
 
             if g_step % tcfg["log_every"] == 0:
                 now = time.time()
@@ -187,21 +203,21 @@ def train(cfg: dict) -> Path:
                 break
 
         if epoch % tcfg["ckpt_every"] == 0 or epoch == cfg["epochs"] or stop:
-            _save_checkpoint(run_dir, netG, netD, "last")
-            netG.eval()
+            _save_checkpoint(run_dir, netG_eval, netD, "last")
+            netG_eval.eval()
             with torch.no_grad():
-                vol = to_labels(netG(sample_noise(1, nz, device)))[0]
+                vol = to_labels(netG_eval(sample_noise(1, nz, device)))[0]
             netG.train()
             plot_volume_slices(vol, run_dir / "previews" / f"epoch{epoch:03d}.png",
                                f"{cfg['run_name']} epoch {epoch} (phi={vol.mean():.3f})")
             log.info("Checkpoint saved (epoch %d, preview phi=%.4f)", epoch, vol.mean())
         # ---- Checkpoint selection on held-out seeds (same rule for every model)
         if epoch % tcfg["select_every"] == 0 or epoch == cfg["epochs"] or stop:
-            score = validation_score(netG, cfg, s2_ref, device)
+            score = validation_score(netG_eval, cfg, s2_ref, device)
             improved = score["val_s2_mae"] < best["val_s2_mae"]
             if improved:
                 best = {**score, "epoch": epoch, "g_step": g_step}
-                _save_checkpoint(run_dir, netG, netD, "best")
+                _save_checkpoint(run_dir, netG_eval, netD, "best")
             with selection_path.open("a", newline="", encoding="utf-8") as fh:
                 csv.DictWriter(fh, SELECTION_FIELDS).writerow(
                     {"epoch": epoch, "g_step": g_step, **score, "best": int(improved)})

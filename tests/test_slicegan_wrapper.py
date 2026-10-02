@@ -63,3 +63,17 @@ def test_random_crop_sampler_augmentation_preserves_phase_counts():
     # Same crop positions; rigid rotations/flips keep each crop's phase fraction
     assert torch.allclose(a[:, 1].mean(dim=(1, 2)), b[:, 1].mean(dim=(1, 2)))
     assert not torch.equal(a, b)
+
+
+def test_update_ema_warmup_and_decay():
+    from src.models.train import update_ema
+
+    model, ema = torch.nn.Linear(2, 1), torch.nn.Linear(2, 1)
+    with torch.no_grad():
+        model.weight.fill_(1.0); ema.weight.fill_(0.0)
+    update_ema(ema, model, decay=0.999, step=0)        # warm-up: d = 1/10 -> moves 90% towards model
+    assert torch.allclose(ema.weight, torch.full_like(ema.weight, 0.9))
+    with torch.no_grad():
+        ema.weight.fill_(0.0)
+    update_ema(ema, model, decay=0.999, step=10**6)    # steady state: d = 0.999
+    assert torch.allclose(ema.weight, torch.full_like(ema.weight, 0.001))

@@ -5,6 +5,7 @@ from __future__ import annotations
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils import parametrize
 
 from src.utils import get_logger
 
@@ -31,6 +32,54 @@ def adapt_patch_embedding(conv_rgb: nn.Conv2d, n_phases: int) -> nn.Conv2d:
         if conv_rgb.bias is not None:
             conv.bias.copy_(conv_rgb.bias)
     return conv
+
+
+class ImprovedSpectralNorm(nn.Module):
+    """ViTGAN's improved spectral normalization: W -> sigma(W_init) * W / sigma(W).
+
+    Plain spectral normalization (W / sigma(W)) forces every layer to Lipschitz constant 1, which
+    ViTGAN found to underfit; rescaling by the spectral norm at initialization keeps each layer at its
+    starting (here: pretrained) scale while preventing it from growing during training
+    (Lee et al., ICLR 2022, Eq. 7). sigma(W) is tracked with one power iteration per training forward.
+    """
+
+    def __init__(self, weight: torch.Tensor, init_iterations: int = 50, eps: float = 1e-12):
+        """Estimate sigma(W_init) with power iteration and keep the singular vectors as buffers."""
+        super().__init__()
+        self.eps = eps
+        w = weight.detach().flatten(1)
+        u = F.normalize(torch.randn(w.shape[0], device=w.device, dtype=w.dtype), dim=0, eps=eps)
+        for _ in range(init_iterations):
+            v = F.normalize(w.t() @ u, dim=0, eps=eps)
+            u = F.normalize(w @ v, dim=0, eps=eps)
+        self.register_buffer("u", u)
+        self.register_buffer("v", v)
+        self.register_buffer("sigma_init", torch.dot(u, w @ v))
+
+    def forward(self, weight: torch.Tensor) -> torch.Tensor:
+        """Return the rescaled weight; update the power-iteration vectors in training mode."""
+        w = weight.flatten(1)
+        if self.training:
+            with torch.no_grad():
+                v = F.normalize(w.t() @ self.u, dim=0, eps=self.eps)
+                u = F.normalize(w @ v, dim=0, eps=self.eps)
+                self.u.copy_(u)
+                self.v.copy_(v)
+        # Clones: several forwards (real, fake, GP interpolates) share one backward, so the graph
+        # must not hold the buffers that the next training forward updates in place.
+        u, v = self.u.clone(), self.v.clone()
+        sigma = torch.dot(u, w @ v)
+        return weight * (self.sigma_init / sigma)
+
+
+def apply_improved_spectral_norm(module: nn.Module) -> int:
+    """Register ISN on every trainable nn.Linear weight inside `module`; returns how many layers."""
+    count = 0
+    for layer in module.modules():
+        if isinstance(layer, nn.Linear) and layer.weight.requires_grad:
+            parametrize.register_parametrization(layer, "weight", ImprovedSpectralNorm(layer.weight))
+            count += 1
+    return count
 
 
 class SwinCritic(nn.Module):
@@ -79,6 +128,9 @@ def build_swin_discriminator(cfg: dict) -> SwinCritic:
 
     critic = SwinCritic(backbone, cfg["n_phases"], scfg["input_size"], scfg["upsample"])
     critic.freeze_stages(scfg["trainable_stages"])
+    if scfg.get("isn"):
+        n = apply_improved_spectral_norm(critic)
+        log.info("Improved spectral normalization (ViTGAN) on %d trainable linear layers", n)
     windows = [tuple(block.window_size) for stage in backbone.layers for block in stage.blocks[:1]]
     log.info(
         "Swin critic %s (pretrained=%s) | input %d | per-stage window %s | trainable stages %s",

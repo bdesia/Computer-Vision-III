@@ -54,3 +54,45 @@ def test_freeze_stages_keeps_last_stages_and_head_trainable():
     assert all(p.requires_grad for p in b.layers[2].parameters())
     assert all(p.requires_grad for p in b.layers[3].parameters())
     assert all(p.requires_grad for p in b.head.parameters())
+
+
+def test_improved_spectral_norm_keeps_init_scale_and_bounds_growth():
+    from src.models.discriminator_swin import apply_improved_spectral_norm
+
+    torch.manual_seed(0)
+    critic = _critic()
+    critic.freeze_stages([3, 4])
+    x = torch.rand(3, 2, 64, 64)
+    with torch.no_grad():
+        before = critic(x)
+    n = apply_improved_spectral_norm(critic)
+    assert n > 0
+    critic.train()
+    with torch.no_grad():
+        for _ in range(5):          # let the power iterations settle
+            after = critic(x)
+    assert torch.allclose(before, after, atol=1e-3)   # sigma(W)/sigma(W_init) = 1 at init
+
+    fc = critic.backbone.head.fc
+    with torch.no_grad():
+        fc.parametrizations.weight.original.mul_(10.0)  # simulate the weights blowing up
+        for _ in range(5):
+            grown = critic(x)
+    assert torch.allclose(grown, after, atol=1e-2)    # effective scale is pinned to the initial one
+    assert not any(p.requires_grad for p in critic.backbone.layers[0].parameters())  # frozen untouched
+
+
+def test_improved_spectral_norm_survives_gp_style_multi_forward_backward():
+    from src.models.discriminator_swin import apply_improved_spectral_norm
+
+    critic = _critic()
+    critic.freeze_stages([3, 4])
+    apply_improved_spectral_norm(critic)
+    critic.train()
+    real, fake = torch.rand(2, 2, 64, 64), torch.rand(2, 2, 64, 64)
+    interp = (0.5 * real + 0.5 * fake).requires_grad_(True)
+    out_i = critic(interp)
+    grad = torch.autograd.grad(out_i.sum(), interp, create_graph=True)[0]
+    loss = critic(fake).mean() - critic(real).mean() + ((grad.flatten(1).norm(dim=1) - 1) ** 2).mean()
+    loss.backward()  # previously failed: buffers modified in place between forwards
+    assert critic.backbone.head.fc.parametrizations.weight.original.grad is not None
