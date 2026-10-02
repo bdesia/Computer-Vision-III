@@ -101,9 +101,8 @@ def train(cfg: dict) -> Path:
     netG = build_generator(cfg, run_dir).to(device)
     netD = build_discriminator(cfg, run_dir).to(device)
     optG = optim.Adam(netG.parameters(), lr=tcfg["lr_g"], betas=tuple(tcfg["betas"]))
-    optD = optim.Adam(
-        [p for p in netD.parameters() if p.requires_grad], lr=tcfg["lr_d"], betas=tuple(tcfg["betas"])
-    )
+    betas_d = tuple(tcfg.get("betas_d") or tcfg["betas"])  # critic-only override; default = shared betas
+    optD = optim.Adam([p for p in netD.parameters() if p.requires_grad], lr=tcfg["lr_d"], betas=betas_d)
     n_g = sum(p.numel() for p in netG.parameters())
     n_d = sum(p.numel() for p in netD.parameters() if p.requires_grad)
     log.info(
@@ -112,9 +111,9 @@ def train(cfg: dict) -> Path:
     )
     log.info(
         "epochs=%d x %d G steps | critic_iters=%d | m_D=%d, m_G=%d volumes (all %d slices/axis) | "
-        "real batch=%d | augment=%s",
+        "real batch=%d | augment=%s | lr_g=%g lr_d=%g betas_d=%s",
         cfg["epochs"], cfg["iters_per_epoch"], critic_iters, m_d, m_g, l, real_batch,
-        cfg["data"]["augment"],
+        cfg["data"]["augment"], tcfg["lr_g"], tcfg["lr_d"], betas_d,
     )
 
     history_path = run_dir / "history.csv"
