@@ -2,13 +2,17 @@
 base: default.yaml
 run_name: m3_swin_sam
 
-model:
-  discriminator: swin
-
 data:
   branch: sam
 
-# Lower critic learning rate for the pretrained Swin backbone: with the shared 1e-4 the Swin critic
-# oscillated between realistic and empty volumes (run v1). G keeps lr_g = 1e-4 as in M1.
+# Swin critic stabilization (run v3). v1 (lr_d 1e-4) and v2 (lr_d 2e-5 alone) oscillated between
+# realistic and empty volumes. Following ViTGAN (Lee et al., ICLR 2022): improved spectral norm on the
+# trainable layers and Adam beta1 = 0 for the critic. G keeps lr_g = 1e-4 and the shared betas as in M1.
+model:
+  discriminator: swin
+  swin:
+    isn: true
+
 train:
   lr_d: 2.0e-5
+  betas_d: [0.0, 0.99]

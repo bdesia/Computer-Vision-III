@@ -64,7 +64,7 @@ train:
   lr_d: 0.0001
   betas: [0.9, 0.99]
   betas_d: null         # optional critic-only Adam betas; null = same as betas
-  ema_decay: null       # e.g. 0.999: sample/select/save an EMA of G's weights (ViTGAN); null = off
+  ema_decay: 0.999      # sample/select/save an EMA of G's weights (ViTGAN, all models); null = off
   critic_iters: 5       # D updates per G update (WGAN-GP)
   gp_lambda: 10
   # SliceGAN Algorithm 1 (paper Sec. 3): D sees ALL l slices per axis of every generated volume,

@@ -67,3 +67,12 @@ def test_only_swin_critics_use_lower_lr_and_all_select_best():
         cfg = load_config(CONFIGS / f"{name}.yaml")
         assert cfg["generate"]["checkpoint"] == "best"
         assert not set(cfg["train"]["select_seeds"]) & set(cfg["generate"]["seeds"])  # held-out seeds
+
+
+def test_vitgan_stabilizers_only_on_swin_critic_and_ema_for_all():
+    cfgs = {n: load_config(CONFIGS / f"{n}.yaml") for n in ("m1_cnn", "m2_swin", "m3_swin_sam")}
+    assert not cfgs["m1_cnn"]["model"]["swin"]["isn"] and cfgs["m1_cnn"]["train"]["betas_d"] is None
+    for n in ("m2_swin", "m3_swin_sam"):
+        assert cfgs[n]["model"]["swin"]["isn"] and cfgs[n]["train"]["betas_d"] == [0.0, 0.99]
+    assert {c["train"]["ema_decay"] for c in cfgs.values()} == {0.999}
+    assert {tuple(c["train"]["betas"]) for c in cfgs.values()} == {(0.9, 0.99)}  # G optimizer identical

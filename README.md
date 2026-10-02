@@ -167,21 +167,31 @@ upstream) are augmented with random 90° rotations and flips only. TF32 matmuls 
 every model. Measured on an RTX A2000 12 GB with MicroLib 000210: 0.30 s per G step for M1 and
 1.9 s for M2, i.e. ~25 min vs ~2.6 h for the default 50 × 100 G steps.
 
-**Run v2: Swin critic learning rate and checkpoint selection.** In the first full run (v1, kept in
-`models/archive_v1/`, `reports/metrics_v1.csv`, `reports/figures/v1/`) the Swin critic with the shared
-`lr_d = 1e-4` oscillated: M2 and M3 alternated between realistic and almost empty volumes every few
-epochs and ended collapsed on MicroLib, while the CNN critic was stable. v2 therefore changes two
-things:
+**Swin critic stabilization (runs v1 → v3).** With the shared settings (v1, `lr_d = 1e-4`) the Swin
+critic oscillated: M2 and M3 alternated between realistic and almost empty volumes every few epochs and
+ended collapsed on MicroLib, while the CNN critic was stable. Lowering the critic learning rate alone
+(v2, `lr_d = 2e-5`) only slowed the oscillation (M2 collapsed to φ ≈ 0 at epochs 4–5, then recovered).
+This matches ViTGAN (Lee et al., ICLR 2022): transformer discriminators train "in a healthy manner"
+at first and become unstable later because dot-product self-attention is not Lipschitz, and gradient
+penalty alone does not fix it. The final setup (v3) therefore uses, for the Swin critic only:
 
-- **Swin critic `lr_d = 2e-5`** (M2, M3 only; `configs/m2_swin.yaml`, `m3_swin_sam.yaml`), the usual
-  smaller step for a pretrained transformer. The generator schedule (`lr_g = 1e-4`) is unchanged, so
-  M1 vs M2 now differs in the critic architecture *and* its learning rate.
-- **Checkpoint selection, same rule for all models.** After every epoch, G generates volumes from two
-  held-out seeds (`train.select_seeds`, never used for evaluation); the epoch with the lowest S₂ MAE vs
-  the model's own training image is saved as `G_best.pt` (`selection.csv`, `selection.yaml`).
-  `generate.checkpoint: best` evaluates that checkpoint on the evaluation seeds. Selection and
-  evaluation use the same 2D reference image, so absolute errors are slightly optimistic; the bias is
-  the same for all models.
+- **improved spectral normalization** (ViTGAN Eq. 7) on every trainable linear layer,
+  `W → σ(W_init) · W / σ(W)`, which pins each layer at its pretrained scale;
+- **Adam β = (0, 0.99)** for the critic (ViTGAN / StyleGAN2 practice) and `lr_d = 2e-5`.
+
+and, for **all** models:
+
+- an **EMA of the generator weights** (decay 0.999, ViTGAN) used for previews, selection and
+  evaluation; the generator architecture and its optimizer are unchanged;
+- **checkpoint selection**: after every epoch, G generates volumes from two held-out seeds
+  (`train.select_seeds`, never used for evaluation); the epoch with the lowest S₂ MAE vs the model's
+  own training image is saved as `G_best.pt` and evaluated (`generate.checkpoint: best`). Selection
+  and evaluation use the same 2D reference, so absolute errors are slightly optimistic, equally for
+  all models.
+
+M1 vs M2 therefore differs in the critic architecture and its regularization/optimizer, never in G.
+Archived runs: `models/archive_v1/` (+ `reports/metrics_v1.csv`, `reports/figures/v1/`) and
+`models/archive_v2/` (partial: MicroLib M1 and the first 12 epochs of M2).
 
 ### SAM phase front-end (M3)
 
