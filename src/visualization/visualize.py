@@ -23,6 +23,7 @@ MODEL_STYLE = {
     "m4_ensemble": {"label": "M4 CNN+Swin", "color": "#eda100", "ls": "-", "marker": "D"},
     "m5_finetune": {"label": "M5 M1+Swin fine-tune", "color": "#e87ba4", "ls": "--", "marker": "v"},
     "m1_extended": {"label": "M1 extended", "color": "#008300", "ls": ":", "marker": "P"},
+    "m1_cnn_diffaug": {"label": "M1 + DiffAug", "color": "#4a3aa7", "ls": "--", "marker": "X"},
 }
 INK, INK_MUTED, GRID = "#1a1a19", "#6b6a64", "#e4e3dc"
 

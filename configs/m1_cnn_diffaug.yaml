@@ -1,0 +1,8 @@
+# M1 + DiffAug (ablation): SliceGAN's CNN critic with the same differentiable augmentation as M2/M3.
+# Separates the effect of the Swin critic from the effect of DiffAug in the M1 vs M2 comparison.
+base: m1_cnn.yaml
+run_name: m1_cnn_diffaug
+
+train:
+  diffaug:
+    policy: [translation, cutout, d4]
