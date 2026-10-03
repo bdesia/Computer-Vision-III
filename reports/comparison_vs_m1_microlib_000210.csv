@@ -1,0 +1,19 @@
+dataset,reference,model,baseline,metric,model_value,baseline_value,diff,diff_lo,diff_hi,verdict
+microlib_000210,common,m1_cnn_diffaug,m1_cnn,abs_dphi,0.0038209,0.00361219,0.000235082,-0.00915274,0.00892276,no clear difference
+microlib_000210,common,m1_cnn_diffaug,m1_cnn,s2_mae,0.00205225,0.00304467,-0.000816289,-0.00682996,0.0042666,no clear difference
+microlib_000210,common,m1_cnn_diffaug,m1_cnn,L_mae,0.00216978,0.00175162,0.000535391,-0.00376991,0.00429267,no clear difference
+microlib_000210,common,m1_extended,m1_cnn,abs_dphi,0.0058078,0.00361219,0.00170435,-0.00802873,0.0135188,no clear difference
+microlib_000210,common,m1_extended,m1_cnn,s2_mae,0.00595404,0.00304467,0.00236281,-0.00468888,0.0100027,no clear difference
+microlib_000210,common,m1_extended,m1_cnn,L_mae,0.00598032,0.00175162,0.00387938,-0.00178452,0.0102367,no clear difference
+microlib_000210,common,m2_swin,m1_cnn,abs_dphi,0.00738044,0.00361219,0.00326207,-0.0068773,0.0140145,no clear difference
+microlib_000210,common,m2_swin,m1_cnn,s2_mae,0.0076756,0.00304467,0.00429548,-0.00323872,0.011745,no clear difference
+microlib_000210,common,m2_swin,m1_cnn,L_mae,0.00557786,0.00175162,0.00348725,-0.00212213,0.00935977,no clear difference
+microlib_000210,common,m3_swin_sam,m1_cnn,abs_dphi,0.0581275,0.00361219,0.0541652,0.0427875,0.0632833,worse
+microlib_000210,common,m3_swin_sam,m1_cnn,s2_mae,0.0328284,0.00304467,0.0295655,0.0224798,0.0348914,worse
+microlib_000210,common,m3_swin_sam,m1_cnn,L_mae,0.0262284,0.00175162,0.0242966,0.0187973,0.0285803,worse
+microlib_000210,common,m4_ensemble,m1_cnn,abs_dphi,0.00281564,0.00361219,-0.000787555,-0.00956749,0.00654412,no clear difference
+microlib_000210,common,m4_ensemble,m1_cnn,s2_mae,0.00203469,0.00304467,-0.000757989,-0.00707213,0.00466148,no clear difference
+microlib_000210,common,m4_ensemble,m1_cnn,L_mae,0.00188198,0.00175162,0.000291243,-0.00424901,0.00474774,no clear difference
+microlib_000210,common,m5_finetune,m1_cnn,abs_dphi,0.0105424,0.00361219,0.00638148,-0.00492261,0.0168357,no clear difference
+microlib_000210,common,m5_finetune,m1_cnn,s2_mae,0.00971277,0.00304467,0.00633325,-0.00176611,0.014005,no clear difference
+microlib_000210,common,m5_finetune,m1_cnn,L_mae,0.00920686,0.00175162,0.00721024,0.000770053,0.013379,worse
