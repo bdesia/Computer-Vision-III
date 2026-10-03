@@ -85,7 +85,7 @@ def test_probe_c_config_matches_probe_a_except_head_and_name():
     assert c["model"]["swin"]["trainable_stages"] == []
     assert c["train"]["lr_d"] == 1e-4 and c["epochs"] == 12
     assert c["train"]["diffaug"]["policy"] == ["translation", "cutout", "d4"]
-    assert c["train"]["select_seeds"] == [1000, 1001] and c["data"]["name"] == "microlib_000210"
+    assert c["train"]["select_seeds"] == list(range(1000, 1016)) and c["data"]["name"] == "microlib_000210"
     assert c["data"]["branch"] == "raw" and c["train"]["ema_decay"] is None
 
 

@@ -17,6 +17,8 @@ from src.visualization.visualize import MODEL_STYLE
 
 log = get_logger(__name__)
 
+MAX_VOLUMES = 4  # volumes per model embedded in the viewer
+
 METRIC_KEYS = ("phi_mean", "phi_std", "phi_train", "abs_dphi", "s2_mae", "s2_err", "L_mae", "L_err",
                "s2_mae_xy", "s2_mae_xz", "s2_mae_yz", "L_mae_xy", "L_mae_xz", "L_mae_yz")
 
@@ -42,7 +44,8 @@ def export(cfgs: list[dict], out_path: Path) -> dict:
         entry = {"id": cfg["run_name"], "label": MODEL_STYLE[cfg["run_name"]]["label"],
                  "critic": cfg["model"]["discriminator"], "input": cfg["data"]["branch"],
                  "status": "pending", "volumes": []}
-        vol_paths = sorted((run_dir / "volumes").glob("*.tif"))
+        vol_paths = sorted((run_dir / "volumes").glob("*.tif"), key=lambda q: int(q.stem.split("seed")[-1]))
+        vol_paths = vol_paths[:MAX_VOLUMES]  # keep the page small; metrics still use all volumes
         if vol_paths:
             entry["status"] = "ready"
             for p in vol_paths:
