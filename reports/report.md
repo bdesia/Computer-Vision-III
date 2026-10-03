@@ -338,10 +338,27 @@ was selection noise and disappeared on more seeds (Section 3).
 | MicroLib 000210 | 0.217 | 0.232 | MicroLib-annotated threshold (0.219) | 0.845 / 0.916 | 0.941 / 0.970 |
 
 Zero-shot SAM needs tiling on this image (a single pass with 16 points per side finds φ = 0.07), and
-even tiled it is less accurate than Otsu on both references: on the synthetic image its masks follow the
-blurred edges outwards (φ overestimated by 16 %), on MicroLib it misses a few islands. The MicroLib
-reference is itself a threshold and structurally favours Otsu; the synthetic ground truth is the
-unbiased comparison and leads to the same conclusion.
+even tiled it has lower IoU/Dice than Otsu on both references. The EDA notebook
+(`notebooks/00_eda.ipynb`) shows where the errors come from:
+
+- **Synthetic (true ground truth):** SAM's error is a systematic one-pixel dilation. All of its wrong
+  pixels lie within 2 px of a true interface and almost all are false inclusion, which adds up to φ
+  overestimated by 16 %. Otsu's errors sit at the same interfaces but are balanced, so its φ is almost exact.
+- **MicroLib:** the two maps agree on 96 % of the pixels. Two thirds of the disagreement is the gray
+  halo around each dark particle, which Otsu (threshold 79, above the curated midpoint 70) labels as
+  inclusion. The rest is a few mid-gray regions that SAM takes as whole objects. As a result SAM's φ, S₂
+  and L are *closer* to the curated reference than Otsu's (S₂ MAE 0.0009 vs 0.0085). Otsu's IoU is still
+  higher, because the reference is itself a global threshold and structurally favours Otsu.
+
+The choice of front-end therefore moves the GAN's *target* by about 0.009 in S₂ MAE, more than the gap
+between the best MicroLib models (0.001–0.003). This is why every model is scored against its own
+training map and, separately, against a common reference (§4).
+
+The EDA also shows that the micrograph is mildly banded along x: the correlation length is about 23 px
+along x vs 19 px along y. SliceGAN assumes the same statistics on all three planes, and the D4 crop
+augmentation symmetrizes x and y on purpose, so the generators learn an isotropic version of the
+structure. The radially averaged metrics are insensitive to this, but no model here reproduces the
+banding direction.
 
 ### 5.5 What do the critics look at?
 
