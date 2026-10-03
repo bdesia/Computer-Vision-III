@@ -17,7 +17,7 @@ TRAIN_ORDER := m1_cnn m1_cnn_diffaug m1_extended m5_finetune m2_swin m3_swin_sam
 CONFIGS := $(foreach m,$(MODELS),configs/$(m).yaml)
 
 .PHONY: help setup vendor data sam train-all train-m1 train-m1-diffaug train-m1-ext train-m2 train-m3 \
-        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui
+        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve
 
 help:
 	@echo "setup              create .venv with Poetry (DEVICE=cpu for CPU torch)"
@@ -36,6 +36,7 @@ help:
 	@echo "generate           128 volumes per model + metrics (metrics.yaml, curves.npz)"
 	@echo "eval               generate + metrics.csv, comparison vs M1, figures, viewer data"
 	@echo "viewer             export 4 volumes per model for reports/viewer/index.html"
+	@echo "export-rve         RVEs for FEM/FFT codes (MODEL=m4_ensemble SIZE=128 SEEDS=\"0 1 2\" FORMATS=\"vti mhd inp\" PERIODIC=1)"
 	@echo "test               run pytest"
 	@echo "report-pdf         reports/report(_es).md -> PDF (pandoc + headless Edge)"
 	@echo "mlflow-backfill    import all finished runs (archives, probes, current) into ./mlruns"
@@ -94,6 +95,15 @@ viewer:
 
 test:
 	$(PY) -m pytest
+
+MODEL ?= m4_ensemble
+SIZE ?= 128
+SEEDS ?= 0 1 2
+FORMATS ?= vti mhd npy
+PERIODIC ?= 1
+
+export-rve:
+	$(PY) -m src.models.export_rve --config configs/$(MODEL).yaml $(DATA_ARG) --size $(SIZE) --seeds $(SEEDS) --formats $(FORMATS) $(if $(filter 1,$(PERIODIC)),--periodic)
 
 report-pdf:
 	$(PY) -m src.visualization.build_report

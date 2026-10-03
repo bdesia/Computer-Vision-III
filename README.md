@@ -277,6 +277,35 @@ make test                                          # pytest
 
 Metric definitions are in `reports/report.md` §4.
 
+## Exporting RVEs for FEM / FFT homogenization
+
+```bash
+make export-rve DATA=configs/data/microlib_000210.yaml                       # M4, 3 periodic 128^3 RVEs
+make export-rve MODEL=m1_cnn SIZE=64 SEEDS="0" FORMATS="inp" DATA=...         # Abaqus voxel mesh
+python -m src.models.export_rve --config configs/m4_ensemble.yaml --data configs/data/microlib_000210.yaml     --size 128 --periodic --seeds 0 1 2 --formats vti mhd inp npy tif
+```
+
+Files go to `exports/<dataset>/<model>/` (not versioned), one set per seed:
+
+| Format | Content | Typical use |
+|--------|---------|-------------|
+| `.vti` | VTK XML ImageData, int32 cell array `material` (0 matrix, 1 inclusion), spacing in µm | ParaView, DAMASK, FFT solvers |
+| `.mhd` + `.raw` | MetaImage header + uint8 voxels | ITK, ParaView, FFT homogenization codes |
+| `.inp` | Abaqus C3D8 voxel mesh, element sets `MATRIX` / `INCLUSION`, node sets `XMIN` … `ZMAX` for periodic BCs, solid sections with placeholder materials | Abaqus; convertible for CalculiX / Code_Aster |
+| `.npy`, `.tif` | uint8 label volume | Python, ImageJ |
+| `.json` | model, checkpoint, seed, shape, voxel size, physical size, phase fractions, seam ratios, files | traceability |
+
+- **Size.** Larger volumes than the 64³ training size come from enlarging the latent input (edge =
+  32 · latent − 64: 64, 96, 128, … voxels), as in the SliceGAN paper. MicroLib voxels are 0.687 µm.
+- **Periodicity.** `--periodic` uses SliceGAN's latent tiling (first two latent slices copied from the last
+  two along each axis). The generated field then repeats with period N − 2 voxels, so 2 voxels are cropped
+  per axis (upstream SliceGAN crops 1, which leaves a duplicated slice at the seam). `seam_ratio_*` in the
+  JSON compares the wrap-around face mismatch with that of neighbouring interior slices: ≈ 1 for the
+  periodic RVEs (1.0–2.0 measured) vs ≈ 8–13 without `--periodic`.
+- **Representativeness.** The phase fraction of single RVEs varies (0.18–0.24 at 126³–128³ for M4); check
+  convergence of the homogenized property with RVE size and average over several seeds.
+- Homogenization itself (FEM/FFT solves) is outside the scope of this project.
+
 ## Experiment tracking (MLflow)
 
 All runs, including the archived stabilization runs (v1–v5) and the critic probes, are tracked with

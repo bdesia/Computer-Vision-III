@@ -61,3 +61,6 @@ mlartifacts/
 
 # Intermediate HTML of the report PDFs
 reports/report*.html
+
+# Exported RVEs (regenerable, large)
+exports/

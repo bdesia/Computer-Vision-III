@@ -182,6 +182,14 @@ last epoch on fresh seeds. Even with 16 seeds, choosing the best of 50 noisy epo
 (the winner's curse: M1's selected checkpoint scored S₂ MAE 0.0016 on its selection seeds but 0.020 on
 128 fresh seeds); evaluation on independent seeds removes that bias from the reported numbers.
 
+**RVE export.** `src/models/export_rve.py` writes generated microstructures for FEM/FFT homogenization
+codes (VTK `.vti`, MetaImage `.mhd/.raw`, Abaqus `.inp` voxel mesh with phase element sets and face node
+sets, NumPy, TIFF, plus JSON metadata). Volumes larger than 64³ are obtained by enlarging the latent
+input; periodic RVEs use SliceGAN's latent tiling with a 2-voxel crop, which we found to be the correct
+period (the upstream 1-voxel crop duplicates a slice at the seam); periodicity is verified by comparing
+the wrap-around face mismatch with interior slice-to-slice mismatch (ratio 1.0–2.0 vs 8–13 without
+tiling).
+
 **Main modules.** `src/data/make_dataset.py` (download, crop, Otsu, crops), `src/features/sam_segment.py`
 (SAM front-end), `src/features/descriptors.py` (φ, S₂, L), `src/models/discriminator_swin.py` (Swin
 critics), `src/models/train.py`, `src/models/generate.py` (volumes + metrics),
@@ -352,8 +360,8 @@ SliceGAN is the 2021 literature baseline; 2024 works (Micro3Diff, DDPM-GAN) impr
 stability with diffusion models, but are outside the scope of a Vision Transformer course project. The
 contribution here is the evaluation of Swin critics and SAM as a phase front-end.
 
-**Future work.** Anisotropic materials (three-view SliceGAN), 128³ volumes, periodic volumes as
-representative volume elements and homogenization (FEM/FNO), Swin critics on 128 px inputs (suggested by
+**Future work.** Anisotropic materials (three-view SliceGAN), homogenization of the exported periodic
+RVEs (FEM/FFT/FNO) with an RVE-size convergence study, Swin critics on 128 px inputs (suggested by
 the linear probe), multi-seed statistics for the Swin-based models, and diffusion-based generators.
 
 ## 7. Planning
