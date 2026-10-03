@@ -110,3 +110,17 @@ def test_weighted_otsu_splits_between_clusters():
     values = np.array([0.1, 0.12, 0.8, 0.82, 0.85])
     t = weighted_otsu(values, np.array([5, 5, 100, 100, 100]))
     assert 0.12 < t < 0.8
+
+
+def test_annotation_reference_uses_midpoint_and_minority(tmp_path):
+    from PIL import Image
+
+    from src.features.sam_segment import annotation_reference
+
+    gray = np.full((20, 20), 200, dtype=np.uint8)
+    gray[:5] = 10                                    # dark minority phase (25 %)
+    Image.fromarray(gray).save(tmp_path / "raw.png")
+    cfg = {"data": {"raw_path": str(tmp_path / "raw.png"), "microlib": {"phases_gray": [8, 133]}}}
+    ref = annotation_reference(cfg)
+    assert ref.dtype == np.uint8 and ref.mean() == pytest.approx(0.25) and ref[:5].all()
+    assert annotation_reference({"data": {"raw_path": "x", "microlib": None}}) is None

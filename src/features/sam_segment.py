@@ -288,6 +288,52 @@ def evaluate_gt_crops(cfg: dict, gray: np.ndarray, sam: np.ndarray, otsu: np.nda
 # --------------------------------------------------------------------------- pipeline
 
 
+def annotation_reference(cfg: dict) -> np.ndarray | None:
+    """Label map from the dataset's curated phase gray levels (MicroLib `phases_gray`), if available.
+
+    The threshold is the midpoint of the two annotated gray levels, applied to the raw 8-bit micrograph;
+    the minority phase is labelled 1. This is a curated reference, not a pixel-accurate ground truth.
+    """
+    levels = (cfg["data"].get("microlib") or {}).get("phases_gray")
+    if not levels:
+        return None
+    with Image.open(cfg["data"]["raw_path"]) as im:
+        gray = np.asarray(im.convert("L")).astype(np.float32)
+    labels = (gray > float(np.mean(levels))).astype(np.uint8)
+    return labels if labels.mean() <= 0.5 else 1 - labels
+
+
+def reference_scores(cfg: dict, sam: np.ndarray, otsu: np.ndarray) -> dict:
+    """IoU/Dice of SAM and Otsu against the synthetic ground truth and/or the annotation reference."""
+    out = {}
+    if cfg["data"]["source"] == "synthetic":
+        gt = load_label_map(Path(cfg["data"]["raw_path"]).with_name("micro_2d_gt.png"))
+        out["synthetic_ground_truth"] = {"sam_iou_dice": list(iou_dice(sam, gt)),
+                                         "otsu_iou_dice": list(iou_dice(otsu, gt)), "phi_ref": float(gt.mean())}
+    ref = annotation_reference(cfg)
+    if ref is not None:
+        out["annotation_threshold"] = {"sam_iou_dice": list(iou_dice(sam, ref)),
+                                       "otsu_iou_dice": list(iou_dice(otsu, ref)), "phi_ref": float(ref.mean()),
+                                       "threshold_gray": float(np.mean(cfg["data"]["microlib"]["phases_gray"]))}
+    for name, r in out.items():
+        log.info("vs %s (phi %.4f): SAM IoU/Dice %.3f/%.3f | Otsu IoU/Dice %.3f/%.3f", name, r["phi_ref"],
+                 *r["sam_iou_dice"], *r["otsu_iou_dice"])
+    return out
+
+
+def update_reference_scores(cfg: dict) -> dict:
+    """Recompute reference scores from the saved SAM and Otsu label maps (no SAM inference)."""
+    out_dir = Path(cfg["data"]["train_dirs"]["sam"])
+    sam = load_label_map(out_dir / "image.png")
+    otsu = load_label_map(Path(cfg["data"]["train_dirs"]["raw"]) / "image.png")
+    scores = reference_scores(cfg, sam, otsu)
+    meta_path = out_dir / "meta.yaml"
+    meta = yaml.safe_load(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {}
+    meta["reference_scores"] = scores
+    meta_path.write_text(yaml.safe_dump(meta, sort_keys=False), encoding="utf-8")
+    return scores
+
+
 def build_generator(model_id: str, device: str):
     """Hugging Face mask-generation pipeline for SAM (no fine-tuning)."""
     import torch
@@ -342,6 +388,7 @@ def run(cfg: dict, generator=None) -> dict:
         meta["otsu_iou_vs_gt"] = iou_dice(otsu, gt)[0]
     meta["gt_crops"] = {k: v for k, v in evaluate_gt_crops(cfg, gray, labels, otsu).items()
                         if k.startswith("mean_") or k == "gt_source"}
+    meta["reference_scores"] = reference_scores(cfg, labels, otsu)
 
     with (out_dir / "meta.yaml").open("w", encoding="utf-8") as fh:
         yaml.safe_dump(meta, fh, sort_keys=False)
@@ -355,13 +402,15 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--config", default="configs/m3_swin_sam.yaml")
     parser.add_argument("--data", action="append", default=[], help="dataset overlay yaml")
+    parser.add_argument("--reference-only", action="store_true",
+                        help="only recompute IoU/Dice vs the references from the saved label maps")
     args = parser.parse_args()
 
     cfg = load_config(args.config, args.data)
     setup_logging(cfg["paths"]["logs"], "sam_segment", cfg["logging"]["level"])
     set_seed(cfg["seed"])
     try:
-        run(cfg)
+        update_reference_scores(cfg) if args.reference_only else run(cfg)
     except (FileNotFoundError, ValueError, OSError, RuntimeError) as exc:
         log.exception("SAM segmentation failed: %s", exc)
         raise SystemExit(1) from exc

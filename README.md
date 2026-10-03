@@ -213,10 +213,17 @@ Outputs: `data/processed/<name>/train_sam/` (`image.png`, `crops.npy`, `meta.yam
 `data/interim/<name>/sam_overlay.png` and `sam_labels.png`, and the evaluation crops in
 `data/processed/<name>/sam_gt/` (see the README there).
 
-| Dataset | φ SAM | φ Otsu | SAM vs Otsu IoU | SAM vs GT IoU / Dice (5 crops) | Otsu vs GT IoU / Dice |
-|---------|-------|--------|-----------------|--------------------------------|-----------------------|
-| synthetic (`φ_true = 0.250`) | 0.290 | 0.254 | 0.865 | 0.860 / 0.924 | 0.912 / 0.954 |
-| MicroLib 000210 | 0.217 | 0.232 | 0.844 | TODO (manual GT) | TODO |
+| Dataset | φ SAM | φ Otsu | Reference (φ) | SAM IoU / Dice | Otsu IoU / Dice |
+|---------|-------|--------|---------------|----------------|-----------------|
+| synthetic | 0.290 | 0.254 | exact ground-truth mask (0.250) | 0.864 / 0.927 | 0.913 / 0.955 |
+| MicroLib 000210 | 0.217 | 0.232 | MicroLib-annotated threshold (0.219) | 0.845 / 0.916 | 0.941 / 0.970 |
+
+SAM quality is measured against the exact ground truth on the synthetic image and, on MicroLib, against a
+curated reference: the midpoint of the two phase gray levels annotated by the MicroLib authors (8 and 133)
+applied to the raw micrograph (`python -m src.features.sam_segment --data ... --reference-only`). That
+reference is itself a threshold, so it structurally favours Otsu; the synthetic ground truth is the
+unbiased comparison. The 5 evaluation crops in `sam_gt/` are still written (exact ground truth for
+synthetic); hand-corrected MicroLib crops were not produced.
 
 On the synthetic image SAM's masks follow the blurred edges outwards, overestimating `φ`; Otsu,
 whose threshold sits halfway between the two gray levels, is more accurate there. On MicroLib SAM
