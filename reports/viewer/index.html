@@ -308,7 +308,7 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
       ["L MAE", fmt(mt.L_mae), `${pct(mt.L_err)} · xy ${fmt(mt.L_mae_xy, 3)} xz ${fmt(mt.L_mae_xz, 3)} yz ${fmt(mt.L_mae_yz, 3)}`],
     ];
     box.innerHTML = cells.map(([k, v, s]) => `<div class="metric"><span class="k">${k}</span><span class="v">${v}</span><span class="s">${s}</span></div>`).join("");
-    $("metrics-note").textContent = `Mean over ${model.volumes.length} volumes and all xy, xz and yz sections, for r = 0…32 px, against the 2D ${state.data.reference}.`;
+    $("metrics-note").textContent = `Metrics over ${mt.n_volumes || model.volumes.length} generated volumes (${model.volumes.length} shown here) and all xy, xz and yz sections, for r = 0…32 px, against the 2D ${state.data.reference}.`;
   }
   function selectSeed(seed) {
     state.seed = seed;

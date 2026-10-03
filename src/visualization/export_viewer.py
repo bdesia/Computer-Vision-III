@@ -19,7 +19,7 @@ log = get_logger(__name__)
 
 MAX_VOLUMES = 4  # volumes per model embedded in the viewer
 
-METRIC_KEYS = ("phi_mean", "phi_std", "phi_train", "abs_dphi", "s2_mae", "s2_err", "L_mae", "L_err",
+METRIC_KEYS = ("n_volumes", "phi_mean", "phi_std", "phi_train", "abs_dphi", "s2_mae", "s2_err", "L_mae", "L_err",
                "s2_mae_xy", "s2_mae_xz", "s2_mae_yz", "L_mae_xy", "L_mae_xz", "L_mae_yz")
 
 
