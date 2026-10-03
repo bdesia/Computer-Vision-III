@@ -194,7 +194,23 @@ features separates real 64 × 64 crops from slices of M1's best generator with 7
 are separated at 100 %. The frozen features therefore carry a usable real-vs-fake signal, strongest at
 the 8 × 8 resolution of stage 2, and a larger input could add about 10 points.
 
-### 5.3 SAM front-end
+### 5.3 Fine-tuning with a Swin critic (M5 vs M1-extended)
+
+Both runs start from M1's best generator (epoch 34, held-out S₂ MAE 0.0033) and train 20 more epochs
+with fresh critics; they differ only in the critics (CNN vs CNN + frozen Swin with per-position heads).
+
+![M5 vs M1 extended](figures/m5_vs_m1_extended.png)
+
+| Run | Best held-out S₂ MAE (epoch) | Epochs with S₂ MAE ≤ 0.010 |
+|-----|------------------------------|-----------------------------|
+| M1 extended (CNN only) | 0.0051 (8) | 2 / 20 |
+| M5 (CNN + Swin, λ = 1) | **0.0025** (13) | **7 / 20** |
+
+Continuing M1 with a fresh CNN critic does not improve on M1 (0.0051 vs 0.0033), whereas adding the
+Swin critic does (0.0025) and keeps the generator near M1's best quality for more epochs. Final
+evaluation-seed numbers are in Section 5.1.
+
+### 5.4 SAM front-end
 
 | Dataset | φ SAM | φ Otsu | Reference (φ) | SAM IoU / Dice | Otsu IoU / Dice |
 |---------|-------|--------|---------------|----------------|-----------------|
