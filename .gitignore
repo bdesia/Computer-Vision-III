@@ -58,3 +58,6 @@ reports/viewer/viewer_data.js
 # MLflow local tracking store
 mlruns/
 mlartifacts/
+
+# Intermediate HTML of the report PDFs
+reports/report*.html

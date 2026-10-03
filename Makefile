@@ -15,7 +15,7 @@ CFG_M3 := configs/m3_swin_sam.yaml
 DATA ?=
 DATA_ARG := $(if $(DATA),--data $(DATA))
 
-.PHONY: help setup vendor data sam train-m1 train-m2 train-m3 generate eval viewer test mlflow-backfill mlflow-ui
+.PHONY: report-pdf help setup vendor data sam train-m1 train-m2 train-m3 generate eval viewer test mlflow-backfill mlflow-ui
 
 help:
 	@echo "setup     create .venv with Poetry (DEVICE=cpu for CPU torch)"
@@ -31,6 +31,7 @@ help:
 	@echo "test      run pytest"
 	@echo "mlflow-backfill  import all finished runs (archives, probes, current) into ./mlruns"
 	@echo "mlflow-ui        browse ./mlruns at http://127.0.0.1:5000"
+	@echo "report-pdf       reports/report(_es).md -> PDF (pandoc + headless Edge)"
 
 setup:
 	bash setup.sh
@@ -74,3 +75,6 @@ mlflow-backfill:
 
 mlflow-ui:
 	$(PY) -m mlflow ui --backend-store-uri ./mlruns
+
+report-pdf:
+	$(PY) -m src.visualization.build_report

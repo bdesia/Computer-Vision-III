@@ -1,0 +1,32 @@
+/* Print stylesheet for the report PDF (pandoc HTML -> headless Edge/Chrome "print to PDF"). */
+@page { size: A4; margin: 18mm 17mm 20mm 17mm; }
+
+:root { --ink: #1a1a19; --muted: #5b5b57; --rule: #d6d6d0; --accent: #1c5cab; --fill: #f4f4f1; }
+
+html { font-size: 10.5pt; }
+body {
+  font-family: Cambria, "Times New Roman", Georgia, serif;
+  color: var(--ink); background: #ffffff; line-height: 1.42;
+  max-width: 100%; margin: 0;
+}
+h1, h2, h3 { font-family: Calibri, "Segoe UI", Arial, sans-serif; line-height: 1.2; break-after: avoid; }
+h1 { font-size: 19pt; margin: 0 0 4pt; }
+h2 { font-size: 14pt; margin: 18pt 0 6pt; padding-bottom: 3pt; border-bottom: 1px solid var(--rule); }
+h3 { font-size: 11.5pt; margin: 13pt 0 4pt; }
+p, li { text-align: justify; hyphens: auto; }
+a { color: var(--accent); text-decoration: none; }
+code { font-family: Consolas, "Cascadia Mono", monospace; font-size: 0.88em; background: var(--fill); padding: 0 2px; }
+pre { background: var(--fill); padding: 6pt 8pt; overflow-wrap: anywhere; white-space: pre-wrap; font-size: 0.85em; }
+blockquote { margin: 6pt 0; padding: 4pt 10pt; border-left: 3px solid var(--rule); color: var(--muted); }
+
+table { border-collapse: collapse; width: 100%; margin: 8pt 0 10pt; font-size: 8.8pt; break-inside: avoid; }
+th, td { border-bottom: 1px solid var(--rule); padding: 3pt 5pt; vertical-align: top; text-align: left; }
+th { border-bottom: 1.5px solid var(--ink); font-family: Calibri, "Segoe UI", Arial, sans-serif; }
+td { font-variant-numeric: tabular-nums; }
+
+figure, img { break-inside: avoid; }
+img { max-width: 100%; height: auto; display: block; margin: 6pt auto; }
+figure { margin: 8pt 0; }
+figcaption { font-size: 9pt; color: var(--muted); text-align: center; }
+
+header#title-block-header { display: none; } /* the document's own H1 is the title */
