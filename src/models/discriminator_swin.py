@@ -85,13 +85,28 @@ def apply_improved_spectral_norm(module: nn.Module) -> int:
 class SwinCritic(nn.Module):
     """Swin-T backbone + global average pooling + linear layer -> one unbounded critic score per slice."""
 
-    def __init__(self, backbone: nn.Module, n_phases: int, input_size: int, upsample: str = "bilinear"):
-        """Wrap a timm Swin (created with num_classes=1) and swap its patch embedding to n phases."""
+    def __init__(self, backbone: nn.Module, n_phases: int, input_size: int, upsample: str = "bilinear",
+                 head: str = "linear", feature_stages: tuple[int, ...] = (2, 3, 4), head_hidden: int = 256):
+        """Wrap a timm Swin (created with num_classes=1) and swap its patch embedding to n phases.
+
+        head="linear": timm's pooled last-stage features + linear layer (stages chosen by freeze_stages).
+        head="multiscale": frozen backbone, pooled features of `feature_stages`, each LayerNorm-ed and
+        concatenated into a small MLP (Vision-aided GAN style: pretrained features, trainable head only).
+        """
         super().__init__()
         backbone.patch_embed.proj = adapt_patch_embedding(backbone.patch_embed.proj, n_phases)
         self.backbone = backbone
         self.input_size = input_size
         self.upsample = upsample
+        self.head_type = head
+        if head == "multiscale":
+            dims = [backbone.feature_info[i - 1]["num_chs"] for i in feature_stages]
+            self.feature_stages = tuple(feature_stages)
+            self.stage_norms = nn.ModuleList(nn.LayerNorm(d) for d in dims)
+            self.ms_head = nn.Sequential(nn.Linear(sum(dims), head_hidden), nn.LeakyReLU(0.2),
+                                         nn.Linear(head_hidden, 1))
+        elif head != "linear":
+            raise ValueError(f"Unknown model.swin.head '{head}' (expected linear | multiscale)")
 
     def freeze_stages(self, trainable_stages: list[int]) -> None:
         """Freeze patch embedding and the stages (1-based) not listed; final norm and head stay trainable."""
@@ -101,12 +116,26 @@ class SwinCritic(nn.Module):
         self.backbone.norm.requires_grad_(True)
         self.backbone.head.requires_grad_(True)
 
+    def freeze_backbone(self) -> None:
+        """Freeze every backbone weight (used with the multiscale head)."""
+        self.backbone.requires_grad_(False)
+
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Map (N, n_phases, H, W) slices to (N, 1) critic scores."""
         if x.shape[-1] != self.input_size:
             x = F.interpolate(x, size=(self.input_size, self.input_size), mode=self.upsample,
                               align_corners=False)
-        return self.backbone(x)
+        if self.head_type == "linear":
+            return self.backbone(x)
+        h = self.backbone.patch_embed(x)
+        pooled = []
+        for idx, stage in enumerate(self.backbone.layers, start=1):
+            h = stage(h)  # NHWC
+            if idx in self.feature_stages:
+                pooled.append(self.stage_norms[len(pooled)](h.mean(dim=(1, 2))))
+            if idx == max(self.feature_stages):
+                break
+        return self.ms_head(torch.cat(pooled, dim=1))
 
 
 def build_swin_discriminator(cfg: dict) -> SwinCritic:
@@ -126,14 +155,22 @@ def build_swin_discriminator(cfg: dict) -> SwinCritic:
     except Exception as exc:  # network / hub / unknown model name
         raise RuntimeError(f"Could not create Swin backbone '{scfg['backbone']}': {exc}") from exc
 
-    critic = SwinCritic(backbone, cfg["n_phases"], scfg["input_size"], scfg["upsample"])
-    critic.freeze_stages(scfg["trainable_stages"])
+    head = scfg.get("head", "linear")
+    critic = SwinCritic(backbone, cfg["n_phases"], scfg["input_size"], scfg["upsample"], head=head,
+                        feature_stages=tuple(scfg.get("feature_stages", (2, 3, 4))),
+                        head_hidden=scfg.get("head_hidden", 256))
+    if head == "multiscale":
+        critic.freeze_backbone()
+    else:
+        critic.freeze_stages(scfg["trainable_stages"])
     if scfg.get("isn"):
         n = apply_improved_spectral_norm(critic)
         log.info("Improved spectral normalization (ViTGAN) on %d trainable linear layers", n)
     windows = [tuple(block.window_size) for stage in backbone.layers for block in stage.blocks[:1]]
     log.info(
-        "Swin critic %s (pretrained=%s) | input %d | per-stage window %s | trainable stages %s",
-        scfg["backbone"], scfg["pretrained"], scfg["input_size"], windows, scfg["trainable_stages"],
+        "Swin critic %s (pretrained=%s) | input %d | per-stage window %s | head %s | trainable %s",
+        scfg["backbone"], scfg["pretrained"], scfg["input_size"], windows, head,
+        f"head on stages {scfg.get('feature_stages', [2, 3, 4])} (backbone frozen)" if head == "multiscale"
+        else f"stages {scfg['trainable_stages']}",
     )
     return critic

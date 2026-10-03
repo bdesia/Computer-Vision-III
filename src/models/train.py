@@ -14,6 +14,7 @@ import torch.optim as optim
 import yaml
 
 from src.features.descriptors import phase_fraction, s2_mae, s2_radial, s2_volume
+from src.models.diffaug import build_diffaug
 from src.models.discriminator_cnn import build_cnn_discriminator
 from src.models.generate import generate_volumes
 from src.models.slicegan_wrapper import (
@@ -114,6 +115,7 @@ def train(cfg: dict) -> Path:
     # Generator used for previews, selection and saved checkpoints: an EMA copy when enabled (ViTGAN)
     netG_eval = copy.deepcopy(netG).requires_grad_(False) if ema_decay else netG
     netD = build_discriminator(cfg, run_dir).to(device)
+    augment = build_diffaug(cfg)  # identity unless train.diffaug is set
     optG = optim.Adam(netG.parameters(), lr=tcfg["lr_g"], betas=tuple(tcfg["betas"]))
     betas_d = tuple(tcfg.get("betas_d") or tcfg["betas"])  # critic-only override; default = shared betas
     optD = optim.Adam([p for p in netD.parameters() if p.requires_grad], lr=tcfg["lr_d"], betas=betas_d)
@@ -125,9 +127,10 @@ def train(cfg: dict) -> Path:
     )
     log.info(
         "epochs=%d x %d G steps | critic_iters=%d | m_D=%d, m_G=%d volumes (all %d slices/axis) | "
-        "real batch=%d | augment=%s | lr_g=%g lr_d=%g betas_d=%s | G EMA=%s",
+        "real batch=%d | augment=%s | DiffAug=%s | lr_g=%g lr_d=%g betas_d=%s | G EMA=%s",
         cfg["epochs"], cfg["iters_per_epoch"], critic_iters, m_d, m_g, l, real_batch,
-        cfg["data"]["augment"], tcfg["lr_g"], tcfg["lr_d"], betas_d, ema_decay or "off",
+        cfg["data"]["augment"], (tcfg.get("diffaug") or {}).get("policy"), tcfg["lr_g"], tcfg["lr_d"],
+        betas_d, ema_decay or "off",
     )
 
     history_path = run_dir / "history.csv"
@@ -149,9 +152,9 @@ def train(cfg: dict) -> Path:
             fake = netG(sample_noise(m_d, nz, device)).detach()
             for perm in SLICE_PERMUTATIONS:
                 netD.zero_grad(set_to_none=True)
-                real = sampler(real_batch)
+                real = augment(sampler(real_batch))
                 out_real = netD(real).view(-1).mean()
-                fake_slices = volume_to_slices(fake, perm)  # all l * m_d slices
+                fake_slices = augment(volume_to_slices(fake, perm))  # all l * m_d slices
                 out_fake = netD(fake_slices).mean()
                 # Upstream GP: real batch vs the first real_batch fake slices
                 gp = calc_gradient_penalty(
@@ -167,7 +170,7 @@ def train(cfg: dict) -> Path:
             fake = netG(sample_noise(m_g, nz, device))
             err_g = 0.0
             for perm in SLICE_PERMUTATIONS:
-                err_g = err_g - netD(volume_to_slices(fake, perm)).mean()
+                err_g = err_g - netD(augment(volume_to_slices(fake, perm))).mean()
             err_g.backward()
             optG.step()
             g_step += 1
