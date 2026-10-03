@@ -76,3 +76,14 @@ def test_final_setup_has_vitgan_stabilizers_off():
         assert c["train"]["betas_d"] is None and c["train"]["ema_decay"] is None
         assert tuple(c["train"]["betas"]) == (0.9, 0.99)  # same optimizer settings everywhere
     assert cfgs["m2_swin"]["model"]["discriminator"] == cfgs["m3_swin_sam"]["model"]["discriminator"] == "swin"
+
+
+def test_probe_c_config_matches_probe_a_except_head_and_name():
+    c = load_config(CONFIGS / "m2_swin_patchheads.yaml", [CONFIGS / "data" / "microlib_000210.yaml"])
+    assert c["run_name"] == "m2_swin_patchheads"                      # must not overwrite m2_swin
+    assert c["model"]["discriminator"] == "swin" and c["model"]["swin"]["head"] == "multiscale_patch"
+    assert c["model"]["swin"]["trainable_stages"] == []
+    assert c["train"]["lr_d"] == 1e-4 and c["epochs"] == 12
+    assert c["train"]["diffaug"]["policy"] == ["translation", "cutout", "d4"]
+    assert c["train"]["select_seeds"] == [1000, 1001] and c["data"]["name"] == "microlib_000210"
+    assert c["data"]["branch"] == "raw" and c["train"]["ema_decay"] is None

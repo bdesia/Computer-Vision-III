@@ -82,16 +82,40 @@ def apply_improved_spectral_norm(module: nn.Module) -> int:
     return count
 
 
+class PatchScoreHead(nn.Module):
+    """Per-position critic head on one NHWC token map: LayerNorm(C) -> 1x1 conv -> LeakyReLU -> 1x1 conv."""
+
+    def __init__(self, channels: int, hidden: int = 128):
+        """Score every token position independently (no pooling before the score)."""
+        super().__init__()
+        self.norm = nn.LayerNorm(channels)
+        self.conv1 = nn.Conv2d(channels, hidden, kernel_size=1)
+        self.act = nn.LeakyReLU(0.2)
+        self.conv2 = nn.Conv2d(hidden, 1, kernel_size=1)
+
+    def forward(self, tokens: torch.Tensor) -> torch.Tensor:
+        """Map (N, h, w, C) tokens to an (N, 1, h, w) score map."""
+        x = self.norm(tokens).permute(0, 3, 1, 2)
+        return self.conv2(self.act(self.conv1(x)))
+
+
+HEADS = ("linear", "multiscale", "multiscale_patch")
+
+
 class SwinCritic(nn.Module):
     """Swin-T backbone + global average pooling + linear layer -> one unbounded critic score per slice."""
 
     def __init__(self, backbone: nn.Module, n_phases: int, input_size: int, upsample: str = "bilinear",
-                 head: str = "linear", feature_stages: tuple[int, ...] = (2, 3, 4), head_hidden: int = 256):
+                 head: str = "linear", feature_stages: tuple[int, ...] = (2, 3, 4), head_hidden: int = 256,
+                 patch_hidden: int = 128):
         """Wrap a timm Swin (created with num_classes=1) and swap its patch embedding to n phases.
 
         head="linear": timm's pooled last-stage features + linear layer (stages chosen by freeze_stages).
         head="multiscale": frozen backbone, pooled features of `feature_stages`, each LayerNorm-ed and
         concatenated into a small MLP (Vision-aided GAN style: pretrained features, trainable head only).
+        head="multiscale_patch": frozen backbone, one per-position head per stage in `feature_stages`
+        scoring every token (PatchGAN / Projected GAN style); score maps are averaged over positions,
+        then the scales are averaged with equal weights.
         """
         super().__init__()
         backbone.patch_embed.proj = adapt_patch_embedding(backbone.patch_embed.proj, n_phases)
@@ -99,14 +123,17 @@ class SwinCritic(nn.Module):
         self.input_size = input_size
         self.upsample = upsample
         self.head_type = head
-        if head == "multiscale":
-            dims = [backbone.feature_info[i - 1]["num_chs"] for i in feature_stages]
+        if head not in HEADS:
+            raise ValueError(f"Unknown model.swin.head '{head}' (expected one of {HEADS})")
+        if head != "linear":
             self.feature_stages = tuple(feature_stages)
+            dims = [backbone.feature_info[i - 1]["num_chs"] for i in self.feature_stages]
+        if head == "multiscale":
             self.stage_norms = nn.ModuleList(nn.LayerNorm(d) for d in dims)
             self.ms_head = nn.Sequential(nn.Linear(sum(dims), head_hidden), nn.LeakyReLU(0.2),
                                          nn.Linear(head_hidden, 1))
-        elif head != "linear":
-            raise ValueError(f"Unknown model.swin.head '{head}' (expected linear | multiscale)")
+        elif head == "multiscale_patch":
+            self.patch_heads = nn.ModuleList(PatchScoreHead(d, patch_hidden) for d in dims)
 
     def freeze_stages(self, trainable_stages: list[int]) -> None:
         """Freeze patch embedding and the stages (1-based) not listed; final norm and head stay trainable."""
@@ -127,15 +154,28 @@ class SwinCritic(nn.Module):
                               align_corners=False)
         if self.head_type == "linear":
             return self.backbone(x)
+        feats = self.stage_features(x)
+        if self.head_type == "multiscale":
+            pooled = [norm(f.mean(dim=(1, 2))) for norm, f in zip(self.stage_norms, feats)]
+            return self.ms_head(torch.cat(pooled, dim=1))
+        maps = [head(f) for head, f in zip(self.patch_heads, feats)]
+        return torch.stack([m.mean(dim=(2, 3)) for m in maps], dim=0).mean(dim=0)
+
+    def stage_features(self, x: torch.Tensor) -> list[torch.Tensor]:
+        """NHWC token maps after each stage in `feature_stages` (before the backbone's final norm)."""
         h = self.backbone.patch_embed(x)
-        pooled = []
+        feats = []
         for idx, stage in enumerate(self.backbone.layers, start=1):
-            h = stage(h)  # NHWC
+            h = stage(h)
             if idx in self.feature_stages:
-                pooled.append(self.stage_norms[len(pooled)](h.mean(dim=(1, 2))))
+                feats.append(h)
             if idx == max(self.feature_stages):
                 break
-        return self.ms_head(torch.cat(pooled, dim=1))
+        return feats
+
+    def score_maps(self, x: torch.Tensor) -> list[torch.Tensor]:
+        """Per-scale (N, 1, h, w) score maps of the multiscale_patch head (for inspection and tests)."""
+        return [head(f) for head, f in zip(self.patch_heads, self.stage_features(x))]
 
 
 def build_swin_discriminator(cfg: dict) -> SwinCritic:
@@ -158,8 +198,8 @@ def build_swin_discriminator(cfg: dict) -> SwinCritic:
     head = scfg.get("head", "linear")
     critic = SwinCritic(backbone, cfg["n_phases"], scfg["input_size"], scfg["upsample"], head=head,
                         feature_stages=tuple(scfg.get("feature_stages", (2, 3, 4))),
-                        head_hidden=scfg.get("head_hidden", 256))
-    if head == "multiscale":
+                        head_hidden=scfg.get("head_hidden", 256), patch_hidden=scfg.get("patch_hidden", 128))
+    if head in ("multiscale", "multiscale_patch"):
         critic.freeze_backbone()
     else:
         critic.freeze_stages(scfg["trainable_stages"])
@@ -170,7 +210,9 @@ def build_swin_discriminator(cfg: dict) -> SwinCritic:
     log.info(
         "Swin critic %s (pretrained=%s) | input %d | per-stage window %s | head %s | trainable %s",
         scfg["backbone"], scfg["pretrained"], scfg["input_size"], windows, head,
-        f"head on stages {scfg.get('feature_stages', [2, 3, 4])} (backbone frozen)" if head == "multiscale"
+        f"head on stages {scfg.get('feature_stages', [2, 3, 4])} (backbone frozen)" if head != "linear"
         else f"stages {scfg['trainable_stages']}",
     )
+    n_train = sum(p.numel() for p in critic.parameters() if p.requires_grad)
+    log.info("Swin critic trainable parameters: %s", f"{n_train:,}")
     return critic

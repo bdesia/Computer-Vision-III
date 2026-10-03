@@ -61,3 +61,49 @@ def test_multiscale_head_trains_only_head_and_supports_gp():
     ((grad.flatten(1).norm(dim=1) - 1) ** 2).mean().backward()
     assert critic.ms_head[0].weight.grad is not None
     assert all(p.grad is None for p in critic.backbone.parameters())
+
+
+def _swin_backbone():
+    return timm.create_model("swin_tiny_patch4_window7_224", pretrained=False, img_size=64,
+                             num_classes=1, drop_path_rate=0.0)
+
+
+def test_multiscale_patch_head_trains_only_heads_and_has_input_gradient():
+    critic = SwinCritic(_swin_backbone(), 2, 64, head="multiscale_patch", feature_stages=(2, 3, 4))
+    critic.freeze_backbone()
+    trainable = {n: p.numel() for n, p in critic.named_parameters() if p.requires_grad}
+    assert trainable and all(n.startswith("patch_heads") for n in trainable)
+    assert 170_000 <= sum(trainable.values()) <= 180_000          # ~0.17-0.18 M (probe A: 0.35 M)
+    assert not any(p.requires_grad for p in critic.backbone.parameters())  # incl. norm and timm head
+    maps = critic.score_maps(_onehot(2))
+    assert [tuple(m.shape) for m in maps] == [(2, 1, 8, 8), (2, 1, 4, 4), (2, 1, 2, 2)]
+
+    x = _onehot(3).requires_grad_(True)
+    out = critic(x)
+    assert out.shape == (3, 1)
+    grad = torch.autograd.grad(out.sum(), x, create_graph=True)[0]
+    assert grad.abs().sum() > 0
+    ((grad.flatten(1).norm(dim=1) - 1) ** 2).mean().backward()   # GP double backward
+    assert critic.patch_heads[0].conv1.weight.grad is not None
+
+
+def test_multiscale_patch_single_scale_is_mean_of_its_score_map():
+    critic = SwinCritic(_swin_backbone(), 2, 64, head="multiscale_patch", feature_stages=(2,))
+    x = _onehot(4)
+    with torch.no_grad():
+        score_map = critic.score_maps(x)[0]
+        assert torch.allclose(critic(x), score_map.mean(dim=(2, 3)), atol=1e-6)
+
+
+def test_linear_and_multiscale_heads_still_build_as_before():
+    lin = SwinCritic(_swin_backbone(), 2, 64)
+    lin.freeze_stages([3, 4])
+    assert not hasattr(lin, "patch_heads") and not hasattr(lin, "ms_head")
+    assert lin(_onehot(2)).shape == (2, 1)
+    ms = SwinCritic(_swin_backbone(), 2, 64, head="multiscale", head_hidden=256)
+    ms.freeze_backbone()
+    n = sum(p.numel() for p in ms.parameters() if p.requires_grad)
+    assert n == 2 * (192 + 384 + 768) + (1344 * 256 + 256) + (256 + 1)   # probe A head, unchanged
+    assert ms(_onehot(2)).shape == (2, 1)
+    with pytest.raises(ValueError):
+        SwinCritic(_swin_backbone(), 2, 64, head="patch")

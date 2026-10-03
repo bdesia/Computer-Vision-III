@@ -58,9 +58,11 @@ model:
     pretrained: true
     trainable_stages: [3, 4]   # train head + last stages; patch embed and stages 1-2 frozen
     isn: false          # ViTGAN improved spectral norm on the trainable linear layers (tried in v3; off)
-    head: linear        # linear (timm head, stages above trainable) | multiscale (frozen backbone + MLP head)
+    head: linear        # linear (timm head, trainable stages) | multiscale (frozen, pooled MLP head)
+                        # | multiscale_patch (frozen, per-position heads, averaged over positions and scales)
     feature_stages: [2, 3, 4]   # multiscale head only
     head_hidden: 256            # multiscale head only
+    patch_hidden: 128           # multiscale_patch heads only (1x1 conv width)
 
 train:
   lr_g: 0.0001

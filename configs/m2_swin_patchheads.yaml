@@ -1,0 +1,20 @@
+# Probe C — frozen Swin + per-position multi-scale heads (no pooling before the score).
+# Identical to probe A (frozen backbone, DiffAug, lr_d 1e-4, 12 epochs, same selection seeds; run with
+# --data configs/data/microlib_000210.yaml) except the head: every token of stages 2-4 is scored by a
+# LayerNorm -> 1x1 conv -> LeakyReLU -> 1x1 conv head, score maps are averaged over positions and then
+# over scales (PatchGAN / Projected GAN style). A vs C isolates the effect of pooling.
+base: m2_swin.yaml
+run_name: m2_swin_patchheads   # required: otherwise inherits m2_swin and overwrites that run
+
+epochs: 12
+
+model:
+  discriminator: swin
+  swin:
+    head: multiscale_patch
+    trainable_stages: []       # whole backbone frozen (as in probe A; multiscale heads freeze it anyway)
+
+train:
+  lr_d: 1.0e-4                 # fresh heads trained from scratch, as M1's critic
+  diffaug:
+    policy: [translation, cutout, d4]
