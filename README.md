@@ -253,6 +253,24 @@ make test                                          # pytest
 
 Metric definitions are in `reports/report.md` §4.
 
+## Experiment tracking (MLflow)
+
+All runs, including the archived stabilization runs (v1–v5) and the critic probes, are tracked with
+MLflow in a local file store (`mlruns/`, not versioned); nothing is uploaded anywhere.
+
+```bash
+make mlflow-backfill   # import finished runs from models/ (idempotent; each root tagged with its version)
+make mlflow-ui         # http://127.0.0.1:5000
+```
+
+One experiment per dataset (`slicegan-vit-microlib_000210`, `slicegan-vit-synthetic`). Each run has the
+flattened config as parameters; training curves (`train_*`, per generator step), held-out selection
+scores (`val_phi`, `val_s2_mae`, per epoch), the best checkpoint (`best_*`) and evaluation metrics
+(`eval_<reference>_<metric>`) as metrics; tags `version`, `model`, `discriminator`, `swin_head`, `loss`,
+`training_image`, `git_commit`; and config, logs, metrics, curves and previews as artifacts. New runs
+can be logged live with `tracking.mlflow: true` (the evaluation step then adds its metrics to the same
+run).
+
 ## Results
 
 TBD — see `reports/report.md`.
