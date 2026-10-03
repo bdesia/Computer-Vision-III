@@ -1,0 +1,29 @@
+{
+  "m1_cnn": {
+    "title": "M1: SliceGAN CNN",
+    "boundary_share_real": 0.2496458824025467,
+    "boundary_share_fake": 0.25607080571353436,
+    "boundary_area_fraction": 0.12255859375,
+    "score_real_mean": 8.77067756652832,
+    "score_fake_mean": 3.9004263877868652,
+    "real_above_fake": 0.75390625
+  },
+  "m2_swin": {
+    "title": "M2: Swin-T (stages 3-4 trained)",
+    "boundary_share_real": 0.21974916441831738,
+    "boundary_share_fake": 0.23607625672593713,
+    "boundary_area_fraction": 0.12255859375,
+    "score_real_mean": -3.423133373260498,
+    "score_fake_mean": -3.79013991355896,
+    "real_above_fake": 0.787109375
+  },
+  "m4_ensemble": {
+    "title": "M4: frozen Swin-T, per-position heads",
+    "boundary_share_real": 0.1607831833534874,
+    "boundary_share_fake": 0.1833535828627646,
+    "boundary_area_fraction": 0.12255859375,
+    "score_real_mean": 0.2695956528186798,
+    "score_fake_mean": -0.053239718079566956,
+    "real_above_fake": 0.6748046875
+  }
+}

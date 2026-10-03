@@ -343,6 +343,28 @@ blurred edges outwards (φ overestimated by 16 %), on MicroLib it misses a few i
 reference is itself a threshold and structurally favours Otsu; the synthetic ground truth is the
 unbiased comparison and leads to the same conclusion.
 
+### 5.5 What do the critics look at?
+
+SmoothGrad saliency (Smilkov et al., 2017): the gradient of each trained critic's score with respect to
+its one-hot input, averaged over 16 noisy copies, on 32 real crops and 32 generated slices
+(`src/visualization/critic_saliency.py`, values in `reports/critic_saliency.json`).
+
+![Critic saliency](figures/critic_saliency.png)
+
+| Critic | Saliency on phase boundaries (boundary band = 12 % of pixels) | P(score real > score generated) |
+|--------|---------------------------------------------------------------|---------------------------------|
+| M1 SliceGAN CNN | 25 % (2.1 × its area) | 0.75 |
+| M2 Swin-T, stages 3–4 trained | 22 % (1.8 ×) | 0.79 |
+| M4 frozen Swin-T, per-position heads | 16 % (1.3 ×) | 0.67 |
+
+The CNN critic concentrates on the inclusion outlines: it judges interfaces. The trained Swin-T also
+favours boundaries but more diffusely, and its saliency shows the 4 × 4 patch grid of the transformer. The
+frozen Swin-T heads spread their attention over the whole slice: they respond to global texture and
+arrangement rather than to local edges, and separate real from generated slices least on their own. The
+two critics of M4 therefore use complementary cues (CNN: interfaces; frozen Swin: global texture), a
+plausible reason why the ensemble is the most stable model, while the frozen Swin alone cannot control the
+phase fraction (Section 5.2).
+
 ## 6. Conclusions and future work
 
 **TBD** after the final runs. Points already supported by the experiments:
@@ -395,6 +417,7 @@ the linear probe), multi-seed statistics for the Swin-based models, and diffusio
   *CVPR*, 2022.
 - A. Sauer et al. Projected GANs Converge Faster. *NeurIPS*, 2021.
 - S. Zhao et al. Differentiable Augmentation for Data-Efficient GAN Training. *NeurIPS*, 2020.
+- D. Smilkov et al. SmoothGrad: removing noise by adding noise. *arXiv:1706.03825*, 2017.
 - T. Karras et al. Training Generative Adversarial Networks with Limited Data. *NeurIPS*, 2020.
 - K.-H. Lee, G. J. Yun. Multi-plane denoising diffusion-based dimensionality expansion for 2D-to-3D
   reconstruction of microstructures with harmonized sampling (Micro3Diff). *npj Computational
