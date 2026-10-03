@@ -85,11 +85,17 @@ volumes. Additions: critic branches (single critic or CNN + Swin ensemble), hing
 augmentation of critic inputs (DiffAug: translation, cutout, 90° rotations/flips), generator warm
 start, and checkpoint selection.
 
-**Checkpoint selection.** After every epoch (100 generator steps) the generator produces volumes from
-two held-out seeds (1000, 1001), never used for evaluation; the epoch with the lowest S₂ MAE against
-the model's own training image is kept and evaluated. This is applied identically to every model.
-Selection and evaluation use the same 2D reference image, so absolute errors are slightly optimistic,
-equally for all models.
+**Checkpoint selection and evaluation protocol.** After every epoch (100 generator steps) the generator
+produces 16 volumes from held-out seeds (1000–1015), and the epoch with the lowest S₂ MAE against the
+model's own training image is kept. The kept checkpoint is then evaluated on 128 *different* seeds
+(0–127), so the reported numbers are never measured on the volumes used to choose the checkpoint. The
+same rule is applied to every model. The protocol was tightened twice during the project, because single
+64³ volumes are small samples of the microstructure (≈ 30 islands; phase fraction varies by ±0.05 from
+volume to volume): with 2 selection seeds and 4 evaluation seeds (run v5), model rankings reversed when
+re-evaluated on 32 seeds, and a checkpoint picked as best on 2 seeds could be three times worse than the
+last epoch on fresh seeds. Even with 16 seeds, choosing the best of 50 noisy epoch scores is optimistic
+(the winner's curse: M1's selected checkpoint scored S₂ MAE 0.0016 on its selection seeds but 0.020 on
+128 fresh seeds); evaluation on independent seeds removes that bias from the reported numbers.
 
 **Main modules.** `src/data/make_dataset.py` (download, crop, Otsu, crops), `src/features/sam_segment.py`
 (SAM front-end), `src/features/descriptors.py` (φ, S₂, L), `src/models/discriminator_swin.py` (Swin
@@ -106,7 +112,7 @@ the slice-averaged descriptors of the generated volume; this is the justificatio
 below (SliceGAN, Kench & Cooper 2021). All are implemented in `src/features/descriptors.py` and
 tested in `tests/test_descriptors.py` against cases with analytic answers. Label 1 is the
 inclusion/pore phase and `I(x)` its indicator function; curves are evaluated for `r = 0 … 32` px on
-N = 4 generated 64³ volumes per model (different seeds).
+N = 128 generated 64³ volumes per model (different seeds; the brief requires N ≥ 4).
 
 - **Phase fraction** `φ = ⟨I(x)⟩`, reported as mean ± std over the N volumes, together with
   `|Δφ| = |φ̄_gen − φ_train|`.
@@ -124,6 +130,14 @@ N = 4 generated 64³ volumes per model (different seeds).
 - **3D isotropy check**: `φ`, `S₂ MAE` and `L MAE` per slice orientation (xy, xz, yz). If one plane
   diverges, the volume is not isotropic. Averaged over all slices, `φ_xy = φ_xz = φ_yz = φ` by
   construction, so the spread of the per-slice `φ` along each axis is reported too.
+- **Uncertainty.** 95 % confidence intervals for `|Δφ|`, `S₂ MAE` and `L MAE` come from a bootstrap over
+  the 128 volumes (2000 resamples, each recomputing the metric exactly as reported). Each model is
+  compared with the baseline M1 through the bootstrap distribution of the difference; a model is called
+  better or worse only if that interval excludes zero.
+- **Typical quality during training (selection-free).** The per-epoch held-out scores are unbiased
+  individually; only picking their minimum is optimistic. The median and interquartile range of the
+  per-epoch held-out S₂ MAE over the second half of training, and the number of collapsed epochs
+  (held-out φ < 0.05), summarize how good and how stable a model is without any selection.
 - **Common reference.** Every model is scored against its own training image and against a reference
   shared by all models of a dataset, so that M3 (trained on the SAM map) is comparable with M2: the
   Otsu map for MicroLib (no ground truth exists) and the exact ground-truth mask for synthetic data.
