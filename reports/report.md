@@ -56,14 +56,14 @@ and real 64 × 64 crops of the training image are scored by a 2D critic:
 | M5 | Otsu | as M4, generator initialised from M1's best checkpoint | as M4 | as M4 |
 | M1-ext | Otsu | as M1, generator initialised from M1's best checkpoint | WGAN-GP | 2.8 M |
 
-**Metrics.** For each model, four 64³ volumes (seeds 0–3) are compared with the 2D image through φ,
-S₂(r) and L(r), overall and per slice orientation (Section 4).
+**Metrics.** For each model, 128 64³ volumes (seeds 0–127) are compared with the 2D image through φ,
+S₂(r) and L(r), overall and per slice orientation, with bootstrap confidence intervals (Section 4).
 
 ## 3. Technical implementation
 
 **Stack.** Python 3.11, PyTorch 2.5.1 (CUDA 12.4), timm 1.0.11, Hugging Face `transformers` 4.46.3,
 NumPy/SciPy/scikit-image, Poetry environment (`setup.sh`), YAML configs with inheritance and dataset
-overlays, logging to file and console, 68 pytest tests. Trained on one NVIDIA RTX A2000 (12 GB).
+overlays, logging to file and console, MLflow experiment tracking, 74 pytest tests. Trained on one NVIDIA RTX A2000 (12 GB).
 
 **Pretrained models.**
 
@@ -180,7 +180,7 @@ first 12 epochs on MicroLib (held-out φ target 0.232; S₂ MAE of M1's best epo
 |-----|-------------|------|---------|-------------|---------|
 | v1 | stages 3–4 trainable, lr 1e-4, last checkpoint | WGAN-GP | no | realistic at epoch 10, empty at 15 | oscillates, ended collapsed (φ = 0.003) |
 | v2 | stages 3–4, lr 2e-5 | WGAN-GP | no | empty at 4–5, S₂ MAE 0.010 at 9–11 | oscillates, M1-level epochs exist |
-| v2 rerun | same as v2, new seed | WGAN-GP | no | good at epoch 2, then φ ≈ 0 for 10 epochs | strongly seed-dependent |
+| v2 rerun | identical settings and seed | WGAN-GP | no | good at epoch 2, then φ ≈ 0 for 10 epochs | run-to-run variability: non-deterministic GPU kernels, amplified by the GAN dynamics |
 | v3 | v2 + ViTGAN: improved spectral norm, Adam β₁ = 0, G EMA | WGAN-GP | no | φ 0.002–0.08 throughout | critic too strong |
 | stage-4 probe | only stage 4 trainable | WGAN-GP | no | φ 0.08–0.29, best S₂ MAE 0.037 | no full collapse, blurry |
 | A | frozen, pooled multi-scale head | WGAN-GP | yes | φ = 1.0 at epochs 1–6, then 0.51 → 0.31; best S₂ MAE 0.049 | fails: gradient penalty cannot be met through a frozen backbone |
@@ -220,9 +220,9 @@ with fresh critics; they differ only in the critics (CNN vs CNN + frozen Swin wi
 | M1 extended (CNN only) | 0.0051 (8) | 2 / 20 |
 | M5 (CNN + Swin, λ = 1) | **0.0025** (13) | **7 / 20** |
 
-Continuing M1 with a fresh CNN critic does not improve on M1 (0.0051 vs 0.0033), whereas adding the
-Swin critic does (0.0025) and keeps the generator near M1's best quality for more epochs. Final
-evaluation-seed numbers are in Section 5.1.
+**TBD — superseded.** These numbers come from run v5, whose checkpoint selection used only 2 held-out
+seeds; on 32 fresh seeds the apparent advantage of M5 disappeared. The section is rewritten with the
+run-v6 numbers (16 selection seeds, 128 evaluation seeds, confidence intervals).
 
 ### 5.4 SAM front-end
 
