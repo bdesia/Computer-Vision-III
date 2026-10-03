@@ -307,3 +307,33 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+
+
+# --------------------------------------------------------------------------- stabilization probes
+
+
+def plot_selection_curves(runs: list[dict], path: str | Path, phi_target: float, title: str) -> None:
+    """Per-epoch held-out phi and S2 MAE (selection.csv) of several training runs, side by side.
+
+    `runs`: dicts with keys label, csv, color, ls, marker. The phi panel marks the training-image phi.
+    """
+    fig, axes = plt.subplots(1, 2, figsize=(11, 3.9))
+    for run in runs:
+        with Path(run["csv"]).open(newline="", encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        ep = [int(r["epoch"]) for r in rows]
+        for ax, key in zip(axes, ("val_phi", "val_s2_mae")):
+            ax.plot(ep, [float(r[key]) for r in rows], color=run["color"], ls=run["ls"], lw=2,
+                    marker=run["marker"], ms=5, label=run["label"])
+    axes[0].axhline(phi_target, color=INK, lw=1.2, ls=":", label=f"training image φ = {phi_target:.3f}")
+    axes[1].set_yscale("log")
+    for ax, name in zip(axes, ("Held-out φ", "Held-out S₂ MAE (log)")):
+        _style_axes(ax)
+        ax.set_title(name, fontsize=11, color=INK, loc="left")
+        ax.set_xlabel("epoch (100 generator steps)", color=INK_MUTED)
+    axes[0].legend(frameon=False, fontsize=8.5)
+    fig.suptitle(title, fontsize=11, color=INK)
+    fig.tight_layout()
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
