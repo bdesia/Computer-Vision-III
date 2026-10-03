@@ -50,7 +50,7 @@ and real 64 × 64 crops of the training image are scored by a 2D critic:
 | Model | Training image | 2D critic | Loss | Trainable critic params |
 |-------|----------------|-----------|------|-------------------------|
 | M1 | Otsu | SliceGAN CNN (5 strided convs) | WGAN-GP | 2.8 M |
-| M2 | Otsu | Swin-T (ImageNet), **TBD: final variant** | **TBD** | **TBD** |
+| M2 | Otsu | Swin-T (ImageNet), stages 3–4 + head trainable, DiffAug, lr 2e-5 | WGAN-GP | 26.3 M |
 | M3 | SAM | same critic as M2 | same as M2 | same as M2 |
 | M4 | Otsu | SliceGAN CNN **+** frozen Swin-T with per-scale heads (ensemble) | CNN: WGAN-GP, Swin: hinge | 2.8 M + 0.18 M |
 | M5 | Otsu | as M4, generator initialised from M1's best checkpoint | as M4 | as M4 |
@@ -169,18 +169,24 @@ first 12 epochs on MicroLib (held-out φ target 0.232; S₂ MAE of M1's best epo
 | v2 rerun | same as v2, new seed | WGAN-GP | no | good at epoch 2, then φ ≈ 0 for 10 epochs | strongly seed-dependent |
 | v3 | v2 + ViTGAN: improved spectral norm, Adam β₁ = 0, G EMA | WGAN-GP | no | φ 0.002–0.08 throughout | critic too strong |
 | stage-4 probe | only stage 4 trainable | WGAN-GP | no | φ 0.08–0.29, best S₂ MAE 0.037 | no full collapse, blurry |
-| A | frozen, pooled multi-scale head | WGAN-GP | yes | φ = 1.0 at epochs 1–3, best S₂ MAE 0.049 | gradient penalty cannot be met through a frozen backbone |
-| B | stages 3–4, lr 2e-5 | WGAN-GP | yes | TBD | TBD |
-| C | frozen, per-position multi-scale heads | WGAN-GP | yes | TBD | TBD |
-| A-hinge | frozen, pooled head, head spectral norm | hinge | yes | TBD | TBD |
-| C-hinge | frozen, per-position heads, head spectral norm | hinge | yes | TBD | TBD |
+| A | frozen, pooled multi-scale head | WGAN-GP | yes | φ = 1.0 at epochs 1–6, then 0.51 → 0.31; best S₂ MAE 0.049 | fails: gradient penalty cannot be met through a frozen backbone |
+| B | stages 3–4, lr 2e-5 | WGAN-GP | yes | φ ≈ 0 at epochs 1–5; from epoch 7 φ 0.20–0.30, S₂ MAE 0.0091 / 0.018 / **0.0035** / 0.024 / 0.049 / **0.0035** | passes: M1-level epochs, more consistent than v2 |
+| C | frozen, per-position multi-scale heads | WGAN-GP | yes | φ = 1.0 at epochs 1–2, 0.89–0.95 to epoch 8, then 0.38 → 0.08 → 0.11; best S₂ MAE 0.060 | fails like A: the GP, not the pooling, is the problem |
+| A-hinge | frozen, pooled head, head spectral norm | hinge | yes | φ 0.57–1.0, drifting up; best S₂ MAE 0.26 | fails: no collapse, but φ uncontrolled |
+| C-hinge | frozen, per-position heads, head spectral norm | hinge | yes | φ 0.31–0.56; best S₂ MAE 0.12 | fails alone; better than A-hinge, used inside M4/M5 |
 
-Two findings shaped the final models. First, a frozen pretrained backbone cannot be trained with WGAN-GP:
+![Swin critic probes](figures/stabilization_probes.png)
+
+Per-epoch logs of every probe are in `reports/probes/`.
+
+**Decision.** M2/M3 use probe B (the only Swin-only critic reaching M1-level epochs); M4/M5 use the per-position frozen heads of C-hinge inside an ensemble with the CNN critic.
+
+Three findings shaped the final models. First, a frozen pretrained backbone cannot be trained with WGAN-GP:
 the gradient penalty asks for unit input-gradient norm, which the frozen Swin layers fix and the small
 head can only rescale, so the penalty dominates (values of 10–355 instead of ≈ 1) and the critic gives
 no useful signal. Frozen-backbone critics in the literature (Projected GAN, Vision-aided GAN) use
 hinge or BCE losses instead. Second, Vision-aided GAN reports that pretrained critics used *alone*
-diverge and help only in an ensemble with the original discriminator, which motivates M4 and M5.
+diverge and help only in an ensemble with the original discriminator, which motivates M4 and M5. Third, with a hinge loss the frozen Swin critic no longer collapses but does not control the phase fraction on its own (φ drifts to 0.3–0.8); a plausible cause is Swin's per-token LayerNorm, which removes much of the absolute phase-intensity information. The CNN critic in M4/M5 supplies that constraint. Finally, DiffAug is what made the trainable Swin critic work (B vs v2), in line with the limited-data GAN literature (Zhao et al., 2020; Karras et al., 2020): the critic otherwise overfits the few hundred distinct views of a single micrograph.
 
 **Linear-probe diagnostic** (Vision-aided GAN, Sec. 3.2): a logistic regression on frozen, pooled Swin
 features separates real 64 × 64 crops from slices of M1's best generator with 73 % held-out accuracy at

@@ -8,7 +8,7 @@ run_name: m4_ensemble
 model:
   discriminator: cnn+swin
   swin:
-    head: multiscale_patch     # provisional: set to the best hinge probe (A-hinge pooled / C-hinge patch)
+    head: multiscale_patch     # per-position heads (C-hinge beat the pooled A-hinge: best S2 MAE 0.12 vs 0.26)
     head_sn: true
   ensemble:
     swin_loss: hinge

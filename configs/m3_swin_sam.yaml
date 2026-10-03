@@ -5,12 +5,14 @@ run_name: m3_swin_sam
 data:
   branch: sam
 
-# Swin critic learning rate (final setup = run v2). With the shared lr_d = 1e-4 (v1) the Swin critic
-# oscillated between realistic and empty volumes; 2e-5 still oscillates but reaches M1-level epochs,
-# which best-checkpoint selection keeps. ViTGAN stabilizers (ISN, Adam beta1 = 0, G EMA; v3) and a
-# smaller critic (stage 4 only) were tried and performed worse; see README.
+# Final Swin critic setup (= probe B): stages 3-4 trainable, lr_d 2e-5, WGAN-GP, plus DiffAug on the critic
+# inputs. Without DiffAug (v1, v2) the critic oscillated between realistic and empty volumes; with it the
+# best held-out S2 MAE matches M1 (0.0035). ViTGAN stabilizers (v3), a smaller critic, and frozen-backbone
+# critics (WGAN-GP or hinge) were tried and performed worse; see README / report Section 5.2.
 model:
   discriminator: swin
 
 train:
   lr_d: 2.0e-5
+  diffaug:
+    policy: [translation, cutout, d4]
