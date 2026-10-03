@@ -73,3 +73,17 @@ def test_generate_evaluate_and_visualize(tmp_path):
     plot_pipeline(fig_dir / "pipeline.png")
     for name in ("curves.png", "panel.png", "pipeline.png"):
         assert (fig_dir / name).stat().st_size > 10_000
+
+
+def test_late_training_summary_uses_second_half_of_epochs(tmp_path):
+    from src.visualization.visualize import late_training_summary
+
+    with (tmp_path / "selection.csv").open("w", newline="", encoding="utf-8") as fh:
+        w = csv.writer(fh)
+        w.writerow(["epoch", "g_step", "val_phi", "val_s2_mae", "best"])
+        for ep, (phi, s2) in enumerate([(0.0, 0.9), (0.01, 0.8), (0.2, 0.02), (0.3, 0.04)], start=1):
+            w.writerow([ep, ep * 100, phi, s2, 0])
+    out = late_training_summary(tmp_path)
+    assert out["late_epochs"] == "3-4" and out["late_collapsed"] == 0
+    assert abs(out["late_s2_median"] - 0.03) < 1e-12 and abs(out["late_phi_median"] - 0.25) < 1e-12
+    assert late_training_summary(tmp_path / "missing") == {}

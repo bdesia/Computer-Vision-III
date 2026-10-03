@@ -32,7 +32,32 @@ METRIC_COLUMNS = [
     "phi_xy", "phi_xz", "phi_yz", "phi_slice_std_xy", "phi_slice_std_xz", "phi_slice_std_yz",
     "s2_mae_xy", "s2_mae_xz", "s2_mae_yz", "L_mae_xy", "L_mae_xz", "L_mae_yz",
     "dphi_lo", "dphi_hi", "s2_mae_lo", "s2_mae_hi", "L_mae_lo", "L_mae_hi",  # 95 % bootstrap CIs
+    # selection-free "typical quality": held-out S2 MAE / phi of every epoch in the late part of training
+    "late_epochs", "late_s2_median", "late_s2_q25", "late_s2_q75", "late_phi_median", "late_collapsed",
 ]
+
+
+def late_training_summary(run_dir: Path, fraction: float = 0.5) -> dict:
+    """Median / IQR of the per-epoch held-out scores over the last `fraction` of epochs (no selection).
+
+    Each epoch's held-out score is unbiased on its own; only taking the best epoch is optimistic
+    (winner's curse), so this summarizes a model's typical quality and its stability.
+    `late_collapsed` counts epochs whose held-out phi is below 0.05 (near-empty volumes).
+    """
+    path = run_dir / "selection.csv"
+    if not path.exists():
+        return {}
+    with path.open(newline="", encoding="utf-8") as fh:
+        rows = list(csv.DictReader(fh))
+    if not rows:
+        return {}
+    n_late = max(1, int(round(len(rows) * fraction)))
+    late = rows[-n_late:]
+    s2 = np.array([float(r["val_s2_mae"]) for r in late])
+    phi = np.array([float(r["val_phi"]) for r in late])
+    return {"late_epochs": f"{late[0]['epoch']}-{late[-1]['epoch']}", "late_s2_median": float(np.median(s2)),
+            "late_s2_q25": float(np.percentile(s2, 25)), "late_s2_q75": float(np.percentile(s2, 75)),
+            "late_phi_median": float(np.median(phi)), "late_collapsed": int((phi < 0.05).sum())}
 
 COMPARISON_COLUMNS = ["dataset", "reference", "model", "baseline", "metric", "model_value", "baseline_value",
                       "diff", "diff_lo", "diff_hi", "verdict"]
@@ -104,6 +129,7 @@ def collect_metrics(run_dirs: list[Path]) -> list[dict]:
                 for metric, col in (("abs_dphi", "dphi"), ("s2_mae", "s2_mae"), ("L_mae", "L_mae")):
                     if metric in boot:
                         row[f"{col}_lo"], row[f"{col}_hi"] = confidence_interval(boot[metric])
+            row.update(late_training_summary(run_dir))
             rows.append(row)
     return rows
 
