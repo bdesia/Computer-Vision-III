@@ -1,0 +1,9 @@
+# M1-extended — fair baseline for M5: continue M1's best generator for the same 20 epochs with M1's
+# CNN critic only (fresh critic and optimizers, as in M5).
+base: m1_cnn.yaml
+run_name: m1_extended
+
+epochs: 20
+
+train:
+  init_generator: models/{data_name}/m1_cnn/G_best.pt

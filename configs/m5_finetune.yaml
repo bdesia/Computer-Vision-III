@@ -1,0 +1,10 @@
+# M5 — Vision-aided fine-tuning (Kumari et al., CVPR 2022, Algorithm 1): start from M1's best generator
+# and continue training with the CNN + Swin ensemble of M4 (lambda = 1). Compare against M1-extended,
+# which continues M1 for the same number of steps with the CNN critic only.
+base: m4_ensemble.yaml
+run_name: m5_finetune
+
+epochs: 20                     # 2000 extra generator steps
+
+train:
+  init_generator: models/{data_name}/m1_cnn/G_best.pt

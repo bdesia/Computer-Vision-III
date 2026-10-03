@@ -6,7 +6,9 @@ import argparse
 import copy
 import csv
 import time
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Callable
 
 import numpy as np
 import torch
@@ -33,7 +35,8 @@ from src.visualization.visualize import plot_volume_slices
 
 log = get_logger(__name__)
 
-HISTORY_FIELDS = ("epoch", "g_step", "d_real", "d_fake", "wasserstein", "gp", "g_loss", "sec_per_g_step")
+HISTORY_FIELDS = ("epoch", "g_step", "d_real", "d_fake", "wasserstein", "gp", "g_loss", "sec_per_g_step",
+                  "aux_real", "aux_fake")  # aux_*: second critic of an ensemble (empty otherwise)
 SELECTION_FIELDS = ("epoch", "g_step", "val_phi", "val_s2_mae", "best")
 
 
@@ -46,7 +49,7 @@ def build_discriminator(cfg: dict, run_dir: Path) -> torch.nn.Module:
         from src.models.discriminator_swin import build_swin_discriminator
 
         return build_swin_discriminator(cfg)
-    raise ValueError(f"Unknown model.discriminator '{kind}' (expected cnn | swin)")
+    raise ValueError(f"Unknown model.discriminator '{kind}' (expected cnn | swin | cnn+swin)")
 
 
 @torch.no_grad()
@@ -81,11 +84,62 @@ def critic_scores(netD, x: torch.Tensor, per_scale: bool) -> torch.Tensor:
     return netD.forward_per_scale(x) if per_scale else netD(x)
 
 
-def _save_checkpoint(run_dir: Path, netG, netD, tag: str) -> None:
-    """Save G and D state dicts under `run_dir` (tag: 'last' or 'epochXXX')."""
+@dataclass
+class CriticBranch:
+    """One 2D critic with its own loss, optimizer, input augmentation and weight in the generator loss."""
+
+    name: str
+    net: torch.nn.Module
+    opt: optim.Optimizer
+    loss: str
+    augment: Callable[[torch.Tensor], torch.Tensor]
+    weight: float = 1.0
+    per_scale: bool = False
+    diffaug: bool = False
+
+
+def build_critics(cfg: dict, run_dir: Path, device) -> list[CriticBranch]:
+    """Single critic (cnn | swin) or the CNN + Swin ensemble (cnn+swin, Vision-aided GAN style).
+
+    Ensemble: the CNN branch is exactly M1's critic (WGAN-GP, lr_d, no DiffAug); the Swin branch uses
+    `model.ensemble` (loss, lr, weight lambda in the generator loss) and `train.diffaug`.
+    """
+    tcfg = cfg["train"]
+    betas_d = tuple(tcfg.get("betas_d") or tcfg["betas"])  # critic-only override; default = shared betas
+
+    has_policy = bool((tcfg.get("diffaug") or {}).get("policy"))
+
+    def make(name, net, loss, lr, augment, weight, diffaug):
+        if loss not in LOSSES:
+            raise ValueError(f"Unknown loss '{loss}' for critic '{name}' (expected {' | '.join(LOSSES)})")
+        net = net.to(device)
+        opt = optim.Adam([p for p in net.parameters() if p.requires_grad], lr=lr, betas=betas_d)
+        # Hinge on multiscale_patch heads: loss per scale, then averaged (Projected / Vision-aided GAN)
+        per_scale = loss == "hinge" and hasattr(net, "forward_per_scale")
+        return CriticBranch(name, net, opt, loss, augment, weight, per_scale, diffaug)
+
+    kind = cfg["model"]["discriminator"]
+    if kind != "cnn+swin":
+        return [make(kind, build_discriminator(cfg, run_dir), tcfg.get("loss", "wgan-gp"), tcfg["lr_d"],
+                     build_diffaug(cfg), 1.0, has_policy)]
+    from src.models.discriminator_swin import build_swin_discriminator
+
+    ens = cfg["model"]["ensemble"]
+    identity = lambda x: x  # noqa: E731
+    return [
+        make("cnn", build_cnn_discriminator(cfg, run_dir), "wgan-gp", tcfg["lr_d"], identity, 1.0, False),
+        make("swin", build_swin_discriminator(cfg), ens["swin_loss"], ens["swin_lr"], build_diffaug(cfg),
+             float(ens["swin_weight"]), has_policy),
+    ]
+
+
+def _save_checkpoint(run_dir: Path, netG, critics: list[CriticBranch], tag: str) -> None:
+    """Save G and the critic(s) under `run_dir` (D_<tag>.pt: a state dict, or {name: state dict})."""
     try:
         torch.save(netG.state_dict(), run_dir / f"G_{tag}.pt")
-        torch.save(netD.state_dict(), run_dir / f"D_{tag}.pt")
+        d_state = (critics[0].net.state_dict() if len(critics) == 1
+                   else {c.name: c.net.state_dict() for c in critics})
+        torch.save(d_state, run_dir / f"D_{tag}.pt")
     except OSError as exc:
         log.error("Could not save checkpoint '%s' in %s: %s", tag, run_dir, exc)
 
@@ -120,32 +174,35 @@ def train(cfg: dict) -> Path:
              labels.mean())
 
     netG = build_generator(cfg, run_dir).to(device)
+    init_g = tcfg.get("init_generator")
+    if init_g:  # warm start (M5 / M1-extended): continue from a trained generator
+        try:
+            netG.load_state_dict(torch.load(init_g, map_location=device, weights_only=True))
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"train.init_generator not found: {init_g}") from exc
+        log.info("Generator initialized from %s", init_g)
     ema_decay = tcfg.get("ema_decay")
     # Generator used for previews, selection and saved checkpoints: an EMA copy when enabled (ViTGAN)
     netG_eval = copy.deepcopy(netG).requires_grad_(False) if ema_decay else netG
-    netD = build_discriminator(cfg, run_dir).to(device)
-    augment = build_diffaug(cfg)  # identity unless train.diffaug is set
-    loss_type = tcfg.get("loss", "wgan-gp")
-    if loss_type not in LOSSES:
-        raise ValueError(f"Unknown train.loss '{loss_type}' (expected {' | '.join(LOSSES)})")
-    # Hinge on multiscale_patch heads: loss applied per scale, then averaged (Projected GAN / Vision-aided)
-    per_scale = loss_type == "hinge" and hasattr(netD, "forward_per_scale")
+    critics = build_critics(cfg, run_dir, device)
     optG = optim.Adam(netG.parameters(), lr=tcfg["lr_g"], betas=tuple(tcfg["betas"]))
-    betas_d = tuple(tcfg.get("betas_d") or tcfg["betas"])  # critic-only override; default = shared betas
-    optD = optim.Adam([p for p in netD.parameters() if p.requires_grad], lr=tcfg["lr_d"], betas=betas_d)
     n_g = sum(p.numel() for p in netG.parameters())
-    n_d = sum(p.numel() for p in netD.parameters() if p.requires_grad)
     log.info(
-        "Run %s | D=%s | device=%s | G params=%.2fM | D trainable params=%.2fM",
-        cfg["run_name"], cfg["model"]["discriminator"], device, n_g / 1e6, n_d / 1e6,
+        "Run %s | D=%s | device=%s | G params=%.2fM | %s",
+        cfg["run_name"], cfg["model"]["discriminator"], device, n_g / 1e6,
+        " + ".join(f"{c.name} trainable params={sum(p.numel() for p in c.net.parameters() if p.requires_grad) / 1e6:.2f}M"
+                   for c in critics),
     )
     log.info(
         "epochs=%d x %d G steps | critic_iters=%d | m_D=%d, m_G=%d volumes (all %d slices/axis) | "
-        "real batch=%d | augment=%s | DiffAug=%s | loss=%s%s | lr_g=%g lr_d=%g betas_d=%s | G EMA=%s",
+        "real batch=%d | augment=%s | DiffAug=%s | lr_g=%g | G EMA=%s",
         cfg["epochs"], cfg["iters_per_epoch"], critic_iters, m_d, m_g, l, real_batch,
-        cfg["data"]["augment"], (tcfg.get("diffaug") or {}).get("policy"), loss_type,
-        " (per scale)" if per_scale else "", tcfg["lr_g"], tcfg["lr_d"], betas_d, ema_decay or "off",
+        cfg["data"]["augment"], (tcfg.get("diffaug") or {}).get("policy"), tcfg["lr_g"], ema_decay or "off",
     )
+    for c in critics:
+        log.info("critic %s: loss=%s%s | lr=%g betas=%s | weight in G loss=%g | DiffAug=%s", c.name, c.loss,
+                 " (per scale)" if c.per_scale else "", c.opt.param_groups[0]["lr"],
+                 c.opt.param_groups[0]["betas"], c.weight, c.diffaug)
 
     history_path = run_dir / "history.csv"
     with history_path.open("w", newline="", encoding="utf-8") as fh:
@@ -165,24 +222,31 @@ def train(cfg: dict) -> Path:
             # ---- Critic: one update per axis, same critic for all axes (isotropic)
             fake = netG(sample_noise(m_d, nz, device)).detach()
             for perm in SLICE_PERMUTATIONS:
-                netD.zero_grad(set_to_none=True)
-                real = augment(sampler(real_batch))
-                fake_slices = augment(volume_to_slices(fake, perm))  # all l * m_d slices
-                if loss_type == "wgan-gp":
-                    out_real = netD(real).view(-1).mean()
-                    out_fake = netD(fake_slices).mean()
-                    # Upstream GP: real batch vs the first real_batch fake slices
-                    gp = calc_gradient_penalty(
-                        netD, real, fake_slices[:real_batch], real_batch, l, device, tcfg["gp_lambda"], nc
-                    )
-                    (out_fake - out_real + gp).backward()
-                else:  # hinge, no gradient penalty
-                    s_real = critic_scores(netD, real, per_scale)
-                    s_fake = critic_scores(netD, fake_slices, per_scale)
-                    out_real, out_fake = s_real.mean(), s_fake.mean()
-                    gp = torch.zeros((), device=device)
-                    (F.relu(1.0 - s_real).mean() + F.relu(1.0 + s_fake).mean()).backward()
-                optD.step()
+                real_raw = sampler(real_batch)
+                fake_raw = volume_to_slices(fake, perm)  # all l * m_d slices
+                stats = []
+                for c in critics:
+                    netD = c.net
+                    netD.zero_grad(set_to_none=True)
+                    real = c.augment(real_raw)
+                    fake_slices = c.augment(fake_raw)
+                    if c.loss == "wgan-gp":
+                        out_real = netD(real).view(-1).mean()
+                        out_fake = netD(fake_slices).mean()
+                        # Upstream GP: real batch vs the first real_batch fake slices
+                        gp = calc_gradient_penalty(
+                            netD, real, fake_slices[:real_batch], real_batch, l, device, tcfg["gp_lambda"], nc
+                        )
+                        (out_fake - out_real + gp).backward()
+                    else:  # hinge, no gradient penalty
+                        s_real = critic_scores(netD, real, c.per_scale)
+                        s_fake = critic_scores(netD, fake_slices, c.per_scale)
+                        out_real, out_fake = s_real.mean(), s_fake.mean()
+                        gp = torch.zeros((), device=device)
+                        (F.relu(1.0 - s_real).mean() + F.relu(1.0 + s_fake).mean()).backward()
+                    c.opt.step()
+                    stats.append((out_real, out_fake, gp))
+                (out_real, out_fake, gp) = stats[0]
 
             # ---- Generator: every critic_iters critic iterations
             if i % critic_iters != 0:
@@ -191,7 +255,9 @@ def train(cfg: dict) -> Path:
             fake = netG(sample_noise(m_g, nz, device))
             err_g = 0.0
             for perm in SLICE_PERMUTATIONS:
-                err_g = err_g - critic_scores(netD, augment(volume_to_slices(fake, perm)), per_scale).mean()
+                slices = volume_to_slices(fake, perm)
+                for c in critics:
+                    err_g = err_g - c.weight * critic_scores(c.net, c.augment(slices), c.per_scale).mean()
             err_g.backward()
             optG.step()
             g_step += 1
@@ -209,6 +275,8 @@ def train(cfg: dict) -> Path:
                     "gp": gp.item(),
                     "g_loss": err_g.item(),
                     "sec_per_g_step": (now - last_log) / tcfg["log_every"],
+                    "aux_real": stats[1][0].item() if len(stats) > 1 else "",
+                    "aux_fake": stats[1][1].item() if len(stats) > 1 else "",
                 }
                 last_log = now
                 with history_path.open("a", newline="", encoding="utf-8") as fh:
@@ -227,7 +295,7 @@ def train(cfg: dict) -> Path:
                 break
 
         if epoch % tcfg["ckpt_every"] == 0 or epoch == cfg["epochs"] or stop:
-            _save_checkpoint(run_dir, netG_eval, netD, "last")
+            _save_checkpoint(run_dir, netG_eval, critics, "last")
             netG_eval.eval()
             with torch.no_grad():
                 vol = to_labels(netG_eval(sample_noise(1, nz, device)))[0]
@@ -241,7 +309,7 @@ def train(cfg: dict) -> Path:
             improved = score["val_s2_mae"] < best["val_s2_mae"]
             if improved:
                 best = {**score, "epoch": epoch, "g_step": g_step}
-                _save_checkpoint(run_dir, netG_eval, netD, "best")
+                _save_checkpoint(run_dir, netG_eval, critics, "best")
             with selection_path.open("a", newline="", encoding="utf-8") as fh:
                 csv.DictWriter(fh, SELECTION_FIELDS).writerow(
                     {"epoch": epoch, "g_step": g_step, **score, "best": int(improved)})

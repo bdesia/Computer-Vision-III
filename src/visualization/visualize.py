@@ -20,6 +20,9 @@ MODEL_STYLE = {
     "m1_cnn": {"label": "M1 CNN", "color": "#2a78d6", "ls": "-", "marker": "o"},
     "m2_swin": {"label": "M2 Swin", "color": "#eb6834", "ls": "--", "marker": "s"},
     "m3_swin_sam": {"label": "M3 Swin+SAM", "color": "#1baf7a", "ls": "-.", "marker": "^"},
+    "m4_ensemble": {"label": "M4 CNN+Swin", "color": "#eda100", "ls": "-", "marker": "D"},
+    "m5_finetune": {"label": "M5 M1+Swin fine-tune", "color": "#e87ba4", "ls": "--", "marker": "v"},
+    "m1_extended": {"label": "M1 extended", "color": "#008300", "ls": ":", "marker": "P"},
 }
 INK, INK_MUTED, GRID = "#1a1a19", "#6b6a64", "#e4e3dc"
 
@@ -237,7 +240,7 @@ def plot_pipeline(path: str | Path) -> None:
         if text:
             ax.text((p[0] + q[0]) / 2, (p[1] + q[1]) / 2 + 0.12, text, ha="center", fontsize=8, color=INK_MUTED)
 
-    blue, orange, aqua = (MODEL_STYLE[m]["color"] for m in MODEL_STYLE)
+    blue, orange, aqua = (MODEL_STYLE[m]["color"] for m in ("m1_cnn", "m2_swin", "m3_swin_sam"))
     box(0.2, 2.3, 1.8, 0.9, "2D micrograph\n(MicroLib / synthetic)", bold=True)
     box(2.6, 3.4, 1.9, 0.8, "Otsu threshold\n→ label map", edge=blue)
     box(2.6, 1.3, 1.9, 0.8, "SAM ViT-B (zero-shot)\ntiles + merge + gray rule", edge=aqua)

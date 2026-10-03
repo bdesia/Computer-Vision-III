@@ -1,0 +1,23 @@
+# M4 — SliceGAN + Swin ensemble (Vision-aided GAN, Kumari et al., CVPR 2022), trained from scratch.
+# Two critics: the CNN branch is exactly M1's critic (WGAN-GP, lr 1e-4, no DiffAug); the Swin branch is a
+# frozen Swin-T with trainable heads, hinge loss, head spectral norm and DiffAug. The generator minimizes
+# -D_cnn(fake) - lambda * D_swin(fake) with lambda = 1. Same generator and data as M1/M2.
+base: default.yaml
+run_name: m4_ensemble
+
+model:
+  discriminator: cnn+swin
+  swin:
+    head: multiscale_patch     # provisional: set to the best hinge probe (A-hinge pooled / C-hinge patch)
+    head_sn: true
+  ensemble:
+    swin_loss: hinge
+    swin_lr: 1.0e-4
+    swin_weight: 1.0
+
+data:
+  branch: raw
+
+train:
+  diffaug:                     # applied to the Swin branch only
+    policy: [translation, cutout, d4]
