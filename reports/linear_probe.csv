@@ -1,0 +1,25 @@
+input_px,fake,features,train_acc,val_acc
+64,generated (G_best),stage2,0.881,0.75
+64,generated (G_best),stage3,0.9738,0.7
+64,generated (G_best),stage4,1.0,0.6694
+64,generated (G_best),concat,1.0,0.7278
+64,"random noise, same phi",stage2,1.0,1.0
+64,"random noise, same phi",stage3,1.0,1.0
+64,"random noise, same phi",stage4,1.0,1.0
+64,"random noise, same phi",concat,1.0,1.0
+128,generated (G_best),stage2,0.8857,0.8056
+128,generated (G_best),stage3,0.9952,0.7889
+128,generated (G_best),stage4,1.0,0.7222
+128,generated (G_best),concat,1.0,0.825
+128,"random noise, same phi",stage2,1.0,1.0
+128,"random noise, same phi",stage3,1.0,1.0
+128,"random noise, same phi",stage4,1.0,1.0
+128,"random noise, same phi",concat,1.0,1.0
+224,generated (G_best),stage2,0.8119,0.7111
+224,generated (G_best),stage3,0.9726,0.8167
+224,generated (G_best),stage4,1.0,0.7806
+224,generated (G_best),concat,1.0,0.8278
+224,"random noise, same phi",stage2,1.0,1.0
+224,"random noise, same phi",stage3,1.0,1.0
+224,"random noise, same phi",stage4,1.0,1.0
+224,"random noise, same phi",concat,1.0,1.0
