@@ -101,15 +101,21 @@ Outputs, with `<name>` = `synthetic` or `microlib_000210`:
 
 ## Training
 
-```bash
-poetry run python -m src.models.train --config configs/m1_cnn.yaml          # make train-m1
-poetry run python -m src.features.sam_segment --config configs/m3_swin_sam.yaml   # make sam (needed by M3)
-poetry run python -m src.models.train --config configs/m2_swin.yaml         # make train-m2
-poetry run python -m src.models.train --config configs/m3_swin_sam.yaml     # make train-m3
-```
+| Target | Model | Config |
+|--------|-------|--------|
+| `make train-m1` | M1: SliceGAN baseline (CNN critic) | `configs/m1_cnn.yaml` |
+| `make train-m1-diffaug` | M1 + DiffAug (ablation) | `configs/m1_cnn_diffaug.yaml` |
+| `make train-m1-ext` | M1-extended: M1's best G + 20 epochs, CNN only (baseline for M5) | `configs/m1_extended.yaml` |
+| `make train-m2` | M2: Swin-T critic + DiffAug | `configs/m2_swin.yaml` |
+| `make train-m3` | M3: as M2, on the SAM phase map (run `make sam` first) | `configs/m3_swin_sam.yaml` |
+| `make train-m4` | M4: CNN + frozen-Swin critics (ensemble), from scratch | `configs/m4_ensemble.yaml` |
+| `make train-m5` | M5: M1's best G + 20 epochs with the M4 ensemble (needs M1) | `configs/m5_finetune.yaml` |
+| `make train-all` | all seven, M1 first | — |
 
-These train on the synthetic dataset. Append `--data configs/data/microlib_000210.yaml`
-(or `DATA=configs/data/microlib_000210.yaml` with make) to train on the real micrograph.
+Every target takes `DATA=configs/data/microlib_000210.yaml` for the real micrograph (default: synthetic),
+e.g. `make train-all DATA=configs/data/microlib_000210.yaml`. `make train-<config>` trains any other config
+(e.g. the probes). The underlying command is
+`python -m src.models.train --config configs/<config>.yaml [--data <overlay>]`.
 
 Quick smoke test (runs on CPU too):
 
