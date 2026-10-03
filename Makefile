@@ -3,8 +3,10 @@
 
 ifeq ($(OS),Windows_NT)
 PY ?= .venv/Scripts/python.exe
+JEXEC ?= .venv/Scripts/jupyter-execute.exe
 else
 PY ?= .venv/bin/python
+JEXEC ?= .venv/bin/jupyter-execute
 endif
 
 # Dataset overlay, e.g. `make train-all DATA=configs/data/microlib_000210.yaml` (default: synthetic)
@@ -17,13 +19,14 @@ TRAIN_ORDER := m1_cnn m1_cnn_diffaug m1_extended m5_finetune m2_swin m3_swin_sam
 CONFIGS := $(foreach m,$(MODELS),configs/$(m).yaml)
 
 .PHONY: help setup vendor data sam train-all train-m1 train-m1-diffaug train-m1-ext train-m2 train-m3 \
-        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve
+        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve eda
 
 help:
 	@echo "setup              create .venv with Poetry (DEVICE=cpu for CPU torch)"
 	@echo "vendor             fetch SliceGAN into external/SliceGAN (git submodule)"
 	@echo "data               download/generate the 2D micrograph and 64x64 crops"
 	@echo "sam                SAM zero-shot phase map for M3 (+ IoU/Dice vs references)"
+	@echo "eda                execute notebooks/00_eda.ipynb in place (needs make data + make sam, both datasets)"
 	@echo "train-m1           M1  SliceGAN baseline (CNN critic)"
 	@echo "train-m1-diffaug   M1 + DiffAug ablation (CNN critic with DiffAug)"
 	@echo "train-m1-ext       M1-extended: M1's best G + 20 epochs, CNN critic (baseline for M5)"
@@ -54,6 +57,9 @@ data:
 
 sam:
 	$(PY) -m src.features.sam_segment --config configs/m3_swin_sam.yaml $(DATA_ARG)
+
+eda:
+	$(JEXEC) --inplace notebooks/00_eda.ipynb
 
 # ---------------------------------------------------------------- training
 

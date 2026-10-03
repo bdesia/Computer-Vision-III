@@ -34,7 +34,8 @@ src/features/       sam_segment.py (zero-shot SAM + reference scores), descripto
 src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, generate.py, linear_probe.py
 src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, report PDF builder
 src/tracking.py     optional MLflow tracking and backfill of finished runs
-tests/              pytest (74 tests)
+tests/              pytest (81 tests)
+notebooks/          00_eda.ipynb — training images, Otsu vs SAM, crop statistics, 2D descriptors
 reports/            report.md / report_es.md (+ PDFs), figures/, metrics*.csv, comparison_vs_m1_*.csv,
                     probes/ and runs/ (per-epoch selection logs), viewer/ (interactive volume viewer)
 models/             checkpoints per dataset/run + archives v1–v5 and probes (not versioned)
@@ -250,6 +251,11 @@ synthetic); hand-corrected MicroLib crops were not produced.
 On the synthetic image SAM's masks follow the blurred edges outwards, overestimating `φ`; Otsu,
 whose threshold sits halfway between the two gray levels, is more accurate there. On MicroLib SAM
 misses a few islands and shows some straight cuts at tile borders.
+
+The notebook [notebooks/00_eda.ipynb](notebooks/00_eda.ipynb) (`make eda`) looks at both segmentations in
+more detail: where Otsu and SAM disagree (two thirds on interface rims), SAM's one-pixel dilation on the
+synthetic image, the per-crop φ spread that motivates the many-seed evaluation, the 2D S₂ / L of each map
+and the mild x-banding of the MicroLib micrograph.
 
 ## Evaluation
 

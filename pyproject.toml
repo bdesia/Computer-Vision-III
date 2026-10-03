@@ -39,6 +39,8 @@ pytest = "8.3.3"
 ipykernel = "6.29.5"
 jupyterlab-widgets = "3.0.13"
 widgetsnbextension = "4.0.13"
+nbformat = "5.10.4"
+nbclient = "0.10.0"
 
 [[tool.poetry.source]]
 name = "pytorch-cu124"
