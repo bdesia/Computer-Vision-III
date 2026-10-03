@@ -8,18 +8,88 @@ Vision Transformers — FIUBA. Individual work.
 
 Three-dimensional microstructures are needed to compute effective material properties (for example as
 representative volume elements for finite-element analysis), but 3D imaging (micro-CT, FIB-SEM) is
-expensive and often unavailable, while 2D micrographs are cheap. SliceGAN (Kench & Cooper, 2021)
-generates 3D volumes that are statistically equivalent to a single 2D micrograph of an isotropic
-material by training a 3D generator against a 2D discriminator that sees slices of the generated
-volume.
+expensive and often unavailable, while 2D micrographs are cheap, fast and usually of higher resolution.
+This project generates 3D two-phase microstructures from a single 2D micrograph with SliceGAN and studies
+whether Vision Transformers improve it, either as the adversarial critic or as a segmentation front-end.
 
-This project generates 64³ two-phase volumes from one 2D micrograph with SliceGAN and studies where
-Vision Transformers help:
+### 1.1 Background: SliceGAN
+
+**The problem.** A 2D micrograph of a material contains, statistically, much of the information of its 3D
+structure: for an *isotropic* material (no preferred direction), every planar cut through the volume has
+the same statistics (phase fractions, feature sizes and shapes, spatial correlations) as any other. The
+task is therefore to produce 3D volumes whose 2D sections are indistinguishable, statistically, from the
+micrograph. Classical reconstruction methods optimize a 3D volume to match chosen statistical
+descriptors (e.g. the two-point correlation); they are slow (hours for 10⁶ voxels) and only reproduce the
+descriptors they were told to match.
+
+**Generative adversarial networks.** A GAN trains two networks against each other: a *generator* G that
+maps random noise to samples, and a *discriminator* (critic) D that tries to tell generated samples from
+real ones. G is updated to fool D; at equilibrium the generated distribution matches the real one. GANs
+learn the statistics directly from the data instead of from hand-picked descriptors, and once trained
+they generate new samples in seconds.
+
+**SliceGAN's key idea: dimensionality expansion through slicing** (Kench & Cooper, 2021). A GAN normally
+needs training data of the same dimensionality as its output, but no 3D training data exists here.
+SliceGAN combines a **3D generator** with a **2D discriminator** and bridges them with a slicing step:
+
+1. G maps a latent tensor z (Gaussian noise of shape 32 × 4 × 4 × 4 in this project) to a 64³ volume
+   with one channel per phase (softmax, i.e. a soft one-hot encoding).
+2. The generated volume is cut into all 64 slices along each of the three axes (3 × 64 = 192 slices).
+3. D, a 2D convolutional network, scores each slice and an equal-sized random crop of the real
+   micrograph. For an isotropic material one D serves all three directions.
+4. The losses of all slices are combined, and both networks are updated. Because every slice of the
+   volume must look like the micrograph, G learns a 3D structure whose sections in x, y and z all match
+   the 2D statistics.
+
+Training uses the Wasserstein loss with gradient penalty (WGAN-GP; Gulrajani et al., 2017), in which D is
+an unbounded *critic* estimating the Wasserstein distance between real and generated slices, with 5
+critic updates per generator update. The paper's Algorithm 1 shows D all 64 slices per direction of every
+generated volume and uses a generator batch twice the critic batch (m_G = 2 m_D), which the authors found
+most efficient.
+
+**Generator design: uniform information density.** Early SliceGAN versions produced worse quality near
+volume edges. The cause is transpose convolution: a voxel near the edge of the output receives
+contributions from fewer kernel positions than a central voxel, so information is unevenly distributed.
+For microstructures, where edges matter as much as the centre, the authors derive rules for the kernel
+size k, stride s and padding p (s < k, k mod s = 0, p ≥ k − s) and use {k, s, p} = {4, 2, 2}. They also
+give the latent z a spatial size of 4 instead of 1, so that the first layer already learns overlapping
+kernel outputs; as a consequence, volumes larger than 64³ can be generated after training by simply
+enlarging z. The released code (used unchanged here) replaces the last transpose convolution by an
+upsample + convolution ("resize-convolution") to avoid checkerboard artifacts. The critic is a plain
+2D CNN of five strided convolutions (64 × 64 slice → one score).
+
+**Scope and limits.** SliceGAN reproduces the micrograph's statistics without hand-picked descriptors,
+trains in a few hours on one GPU and generates volumes in seconds. It was validated against real 3D
+data of a battery electrode and later applied to 87 materials in the MicroLib library (Kench et al.,
+2022). Its main assumptions are isotropy (anisotropic materials need two or three perpendicular
+micrographs and separate critics) and a field of view that is representative of the material.
+
+### 1.2 Background: the Vision Transformers used in this project
+
+**Vision Transformer (ViT; Dosovitskiy et al., 2021).** An image is split into patches, each patch is
+embedded as a token, and a Transformer encoder relates all tokens through self-attention. This gives a
+global receptive field from the first layer, at the cost of weaker built-in locality than a CNN and a
+need for large training sets (or pretraining).
+
+**Swin Transformer (Liu et al., 2021).** A hierarchical ViT for dense vision tasks. Attention is computed
+inside local windows (7 × 7 tokens) that shift between consecutive layers, so information flows across
+windows; patches are merged between four stages, giving CNN-like feature maps at decreasing resolution.
+Position is encoded by a learned relative-position bias inside each window instead of absolute position
+embeddings. Swin-T (28 M parameters, ImageNet-1k pretrained) is used here as the 2D critic: it brings
+pretrained visual features and global context to the discriminator. Transformer critics are known to
+destabilize GAN training (ViTGAN; Lee et al., 2022), which turned out to be the central difficulty.
+
+**Segment Anything (SAM; Kirillov et al., 2023).** A promptable segmentation model: a ViT image encoder,
+a prompt encoder (points, boxes) and a light mask decoder, trained on 1 billion masks. In *automatic*
+mode a grid of point prompts produces masks for every object in an image, zero-shot. Here SAM ViT-B is
+used to segment the micrograph into phases as an alternative to a global gray-level threshold.
+
+### 1.3 Research questions
 
 - **RQ1 — ViT critic.** Does replacing SliceGAN's CNN discriminator by a Swin Transformer (Swin-T)
-  improve the generated microstructures? (M1 vs M2)
-- **RQ2 — SAM front-end.** Does segmenting the micrograph with the Segment Anything Model (SAM),
-  instead of a global threshold, improve them? (M2 vs M3)
+  improve the generated microstructures? (M1 vs M2, with an M1 + DiffAug ablation)
+- **RQ2 — SAM front-end.** Does segmenting the micrograph with SAM, instead of a global threshold,
+  improve them? (M2 vs M3)
 - **RQ3 — ViT as an additional critic (extension).** Does adding a pretrained Swin-T critic next to
   SliceGAN's CNN, as in Vision-aided GAN (Kumari et al., 2022), help, either from scratch (M4) or as a
   fine-tuning stage of a trained SliceGAN (M5, compared against M1 trained for the same extra steps)?
