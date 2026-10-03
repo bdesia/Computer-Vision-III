@@ -41,6 +41,8 @@ SliceGAN combines a **3D generator** with a **2D discriminator** and bridges the
    volume must look like the micrograph, G learns a 3D structure whose sections in x, y and z all match
    the 2D statistics.
 
+![SliceGAN training](figures/slicegan_schematic.png)
+
 Training uses the Wasserstein loss with gradient penalty (WGAN-GP; Gulrajani et al., 2017), in which D is
 an unbounded *critic* estimating the Wasserstein distance between real and generated slices, with 5
 critic updates per generator update. The paper's Algorithm 1 shows D all 64 slices per direction of every
@@ -64,25 +66,38 @@ data of a battery electrode and later applied to 87 materials in the MicroLib li
 2022). Its main assumptions are isotropy (anisotropic materials need two or three perpendicular
 micrographs and separate critics) and a field of view that is representative of the material.
 
-### 1.2 Background: the Vision Transformers used in this project
+### 1.2 Background: Swin-T and SAM, and where they enter the pipeline
 
-**Vision Transformer (ViT; Dosovitskiy et al., 2021).** An image is split into patches, each patch is
-embedded as a token, and a Transformer encoder relates all tokens through self-attention. This gives a
-global receptive field from the first layer, at the cost of weaker built-in locality than a CNN and a
-need for large training sets (or pretraining).
+**Swin Transformer (Swin-T; Liu et al., 2021)** is a hierarchical Vision Transformer:
 
-**Swin Transformer (Liu et al., 2021).** A hierarchical ViT for dense vision tasks. Attention is computed
-inside local windows (7 × 7 tokens) that shift between consecutive layers, so information flows across
-windows; patches are merged between four stages, giving CNN-like feature maps at decreasing resolution.
-Position is encoded by a learned relative-position bias inside each window instead of absolute position
-embeddings. Swin-T (28 M parameters, ImageNet-1k pretrained) is used here as the 2D critic: it brings
-pretrained visual features and global context to the discriminator. Transformer critics are known to
-destabilize GAN training (ViTGAN; Lee et al., 2022), which turned out to be the central difficulty.
+- the image is split into 4 × 4 patches, each embedded as a token;
+- self-attention is computed inside local 7 × 7-token windows, which shift between consecutive layers so
+  information also flows across windows;
+- four stages merge patches between them, giving feature maps at decreasing resolution (like a CNN);
+- position is encoded by a relative-position bias inside each window, not by absolute embeddings, so the
+  network also runs on small 64 × 64 slices;
+- Swin-T has 28 M parameters and is pretrained on ImageNet-1k.
 
-**Segment Anything (SAM; Kirillov et al., 2023).** A promptable segmentation model: a ViT image encoder,
-a prompt encoder (points, boxes) and a light mask decoder, trained on 1 billion masks. In *automatic*
-mode a grid of point prompts produces masks for every object in an image, zero-shot. Here SAM ViT-B is
-used to segment the micrograph into phases as an alternative to a global gray-level threshold.
+In this project Swin-T replaces (M2, M3) or complements (M4, M5) SliceGAN's CNN as the 2D critic, bringing
+pretrained features and attention over the whole slice. Transformer critics are known to destabilize GAN
+training (ViTGAN; Lee et al., 2022), which turned out to be the central difficulty (Section 5.2).
+
+**Segment Anything (SAM; Kirillov et al., 2023)** is a promptable segmentation model: a ViT image encoder,
+a prompt encoder (points, boxes) and a light mask decoder, trained on 1 billion masks. In automatic mode a
+grid of point prompts yields a mask for every object, zero-shot.
+
+**How SAM is included.** SliceGAN needs a segmented micrograph (one label per phase) as training data;
+the baseline obtains it with a global gray-level threshold (Otsu). SAM is used as an alternative
+*front-end* for this segmentation step, and the rest of the pipeline is unchanged:
+
+1. SAM ViT-B (`facebook/sam-vit-base`, no fine-tuning) runs on overlapping 256 px tiles of the micrograph
+   with a 32 × 32 point grid per tile (a single pass over the whole image misses most small islands);
+2. masks that overlap (IoU > 0.3) are merged;
+3. each merged group is labelled inclusion or matrix by its mean gray level (a two-class split of the
+   group means; uncovered pixels are matrix);
+4. the resulting phase map replaces the Otsu map as the training image of model M3.
+
+![SAM front-end](figures/sam_frontend.png)
 
 ### 1.3 Research questions
 

@@ -438,3 +438,96 @@ def plot_selection_curves(runs: list[dict], path: str | Path, phi_target: float,
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(path, dpi=150)
     plt.close(fig)
+
+
+# --------------------------------------------------------------------------- SliceGAN schematic
+
+
+def plot_slicegan_schematic(volume: np.ndarray, micrograph: np.ndarray, path: str | Path) -> None:
+    """Explanatory figure of SliceGAN training built from real data: 3D G -> slices -> 2D critic <- real crops."""
+    fig = plt.figure(figsize=(13, 5.2))
+    canvas = fig.add_axes([0, 0, 1, 1])
+    canvas.set_xlim(0, 13), canvas.set_ylim(0, 5.2)
+    canvas.axis("off")
+
+    def label(x, y, text, size=9.5, color=INK, weight="normal"):
+        canvas.text(x, y, text, ha="center", va="center", fontsize=size, color=color, fontweight=weight)
+
+    def arrow(p, q, color=INK_MUTED, style="-|>"):
+        canvas.add_patch(FancyArrowPatch(p, q, arrowstyle=style, mutation_scale=13, color=color, linewidth=1.4))
+
+    def image(rect, img, title=None):
+        ax = fig.add_axes(rect)
+        ax.imshow(img, cmap="gray", vmin=0, vmax=1, interpolation="nearest")
+        ax.set_xticks([]), ax.set_yticks([])
+        for sp in ax.spines.values():
+            sp.set_color(INK_MUTED)
+        if title:
+            ax.set_title(title, fontsize=8.5, color=INK_MUTED, pad=2)
+
+    # latent noise and generator
+    rng = np.random.default_rng(0)
+    image([0.015, 0.40, 0.075, 0.19], rng.standard_normal((4, 4)), None)
+    label(0.68, 1.75, "latent z\n32 × 4×4×4")
+    arrow((1.25, 2.6), (1.75, 2.6))
+    canvas.add_patch(FancyBboxPatch((1.8, 2.05), 1.5, 1.1, boxstyle="round,pad=0.02,rounding_size=0.08",
+                                    facecolor="#f4f3ee", edgecolor=INK_MUTED))
+    label(2.55, 2.6, "3D generator G\n(transpose convs,\nk=4, s=2, p=2)", 8.5)
+    arrow((3.3, 2.6), (3.8, 2.6))
+
+    # generated volume (isosurface)
+    ax3d = fig.add_axes([0.29, 0.28, 0.17, 0.44], projection="3d")
+    _isosurface(ax3d, volume, MODEL_STYLE["m4_ensemble"]["color"])
+    label(4.95, 1.25, "generated 64³ volume")
+
+    # slicing
+    arrow((6.1, 2.6), (6.6, 2.6))
+    label(6.35, 3.0, "slice\nx, y, z", 8.5, INK_MUTED)
+    z, y, x = (s // 2 for s in volume.shape)
+    for i, (img, t) in enumerate(((volume[z], "xy"), (volume[:, y, :], "xz"), (volume[:, :, x], "yz"))):
+        image([0.515, 0.68 - i * 0.24, 0.07, 0.175], img, t)
+    label(7.05, 0.85, "all 64 slices per axis", 8.5, INK_MUTED)
+
+    # critic
+    arrow((7.6, 2.6), (8.3, 2.6))
+    canvas.add_patch(FancyBboxPatch((8.35, 2.0), 1.6, 1.2, boxstyle="round,pad=0.02,rounding_size=0.08",
+                                    facecolor="#f4f3ee", edgecolor=MODEL_STYLE["m2_swin"]["color"], linewidth=1.6))
+    label(9.15, 2.6, "2D critic D\nCNN (SliceGAN)\nor Swin-T", 8.5, weight="bold")
+
+    # real micrograph and crops
+    h, w = micrograph.shape
+    image([0.80, 0.62, 0.17, 0.32], micrograph[: min(h, 300), : min(w, 420)], "2D micrograph (real)")
+    image([0.74, 0.30, 0.06, 0.15], micrograph[40:104, 60:124], None)
+    label(10.1, 1.25, "random 64×64\nreal crops", 8.5, INK_MUTED)
+    arrow((10.35, 2.35), (9.95, 2.45))
+
+    # loss and update
+    # feedback: critic score -> generator update, routed below the figure content
+    fb = MODEL_STYLE["m2_swin"]["color"]
+    canvas.plot([9.15, 9.15, 2.55], [2.0, 0.62, 0.62], color=fb, linewidth=1.3, linestyle="--")
+    canvas.add_patch(FancyArrowPatch((2.55, 0.62), (2.55, 2.05), arrowstyle="-|>", mutation_scale=13, color=fb,
+                                     linewidth=1.3, linestyle="--"))
+    label(5.6, 0.42, "critic scores → update G", 8.5, fb)
+    label(6.5, 0.1, "Wasserstein loss over all slices: D learns to separate real crops from generated slices; "
+                    "G is updated so that every slice looks real", 8.5, fb)
+    label(6.5, 5.0, "SliceGAN: a 3D generator trained against a 2D critic through slicing", 12, weight="bold")
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def plot_sam_frontend(gray: np.ndarray, otsu: np.ndarray, overlay: np.ndarray, sam: np.ndarray,
+                      path: str | Path, title: str) -> None:
+    """Micrograph | Otsu label map | SAM masks (overlay) | SAM label map, for the same crop."""
+    panels = [("micrograph (grayscale)", gray, "gray"), ("Otsu threshold → M1, M2, M4, M5", otsu, "gray"),
+              ("SAM masks (tiled, zero-shot)", overlay, None), ("SAM phase map → M3", sam, "gray")]
+    fig, axes = plt.subplots(1, 4, figsize=(13, 3.6))
+    for ax, (t, img, cmap) in zip(axes, panels):
+        ax.imshow(img, cmap=cmap, interpolation="nearest")
+        ax.set_title(t, fontsize=10, color=INK)
+        ax.axis("off")
+    fig.suptitle(title, fontsize=11, color=INK)
+    fig.tight_layout()
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
