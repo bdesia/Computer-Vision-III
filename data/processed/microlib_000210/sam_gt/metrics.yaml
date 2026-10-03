@@ -1,0 +1,17 @@
+crops:
+- crop: 0
+  y: 33
+  x: 570
+- crop: 1
+  y: 244
+  x: 323
+- crop: 2
+  y: 161
+  x: 632
+- crop: 3
+  y: 75
+  x: 69
+- crop: 4
+  y: 196
+  x: 719
+gt_source: none (see reference_scores)

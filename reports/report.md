@@ -155,7 +155,7 @@ reported.
 
 ## 5. Results and examples
 
-### 5.1 Main results (MicroLib 000210, common reference = Otsu map, best checkpoint, N = 4)
+### 5.1 Main results (MicroLib 000210, common reference = Otsu map, best checkpoint, N = 128)
 
 | Model | φ (mean ± std) | \|Δφ\| | S₂ MAE | err(S₂) | L MAE | S₂ MAE xy / xz / yz |
 |-------|----------------|--------|--------|---------|-------|---------------------|

@@ -25,17 +25,21 @@ isotropic material using **SliceGAN**, and measure:
 ## Layout
 
 ```
-configs/            default.yaml + one yaml per model (m1_cnn, m2_swin, m3_swin_sam)
-data/               raw/ interim/ processed/ (not versioned, except processed/sam_gt/)
+configs/            default.yaml + one yaml per model (m1_cnn, m1_cnn_diffaug, m1_extended, m2_swin,
+                    m3_swin_sam, m4_ensemble, m5_finetune), probe configs, data/ dataset overlays
+data/               raw/ interim/ processed/<dataset>/ (not versioned, except sam_gt/ READMEs + GT crops)
 external/SliceGAN/  upstream SliceGAN (git submodule, unmodified)
 src/data/           make_dataset.py — downloads or generates the 2D image and 64x64 crops
-src/features/       sam_segment.py (zero-shot SAM), descriptors.py (φ, S₂)
-src/models/         SliceGAN wrapper, CNN/Swin discriminators, train.py, generate.py
-src/visualization/  figures and metrics table
-tests/              pytest
-reports/            report.md (PDF source), figures/, metrics.csv
-models/             checkpoints (not versioned)
-logs/               per-run logs
+src/features/       sam_segment.py (zero-shot SAM + reference scores), descriptors.py (φ, S₂, L, bootstrap)
+src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, generate.py, linear_probe.py
+src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, report PDF builder
+src/tracking.py     optional MLflow tracking and backfill of finished runs
+tests/              pytest (74 tests)
+reports/            report.md / report_es.md (+ PDFs), figures/, metrics*.csv, comparison_vs_m1_*.csv,
+                    probes/ and runs/ (per-epoch selection logs), viewer/ (interactive volume viewer)
+models/             checkpoints per dataset/run + archives v1–v5 and probes (not versioned)
+logs/               per-run logs (not versioned)
+mlruns/             MLflow store (not versioned; `make mlflow-backfill`, `make mlflow-ui`)
 ```
 
 ## Setup
@@ -174,27 +178,39 @@ every model. Measured on an RTX A2000 12 GB with MicroLib 000210: 0.30 s per G s
 1.9 s for M2, i.e. ~25 min vs ~2.6 h for the default 50 × 100 G steps.
 
 **Swin critic stabilization.** Transformer critics are known to make GAN training unstable
-(ViTGAN, Lee et al., ICLR 2022). Four settings were tried on MicroLib 000210, scoring the generator
-after every epoch on two held-out seeds (φ and S₂ MAE vs the training image, target φ = 0.232):
+(ViTGAN, Lee et al., ICLR 2022). Ten settings were tried on MicroLib 000210, scoring the generator after
+every epoch on held-out seeds (φ and S₂ MAE vs the training image, target φ = 0.232; first 12 epochs):
 
-| Run | Swin critic setting | Epochs 1–12 (held-out φ, S₂ MAE) | Outcome |
-|-----|---------------------|-----------------------------------|---------|
-| v1 | shared `lr_d = 1e-4` (as M1), last checkpoint | realistic at epoch 10 (φ 0.24), empty at 15 | oscillates; ended collapsed (φ 0.003) |
-| v2 | `lr_d = 2e-5` | empty at epochs 4–5, then φ 0.22–0.26, S₂ MAE 0.010 at 9–11 | oscillates, but reaches M1-level epochs |
-| v3 | v2 + ViTGAN: improved spectral norm, Adam β = (0, 0.99), G EMA 0.999 | φ 0.002–0.08 almost throughout | critic too strong; worse |
-| probe | v2 + only Swin stage 4 trainable | φ 0.08–0.29, best S₂ MAE 0.037 | no full collapse, but blurrier; worse |
+| Run | Swin critic | Loss | DiffAug | Outcome |
+|-----|-------------|------|---------|---------|
+| v1 | stages 3–4 trainable, lr 1e-4 (as M1) | WGAN-GP | no | oscillates between realistic and empty volumes; ended collapsed |
+| v2 | stages 3–4, lr 2e-5 | WGAN-GP | no | still oscillates, but reaches M1-level epochs |
+| v2 rerun | identical | WGAN-GP | no | different trajectory (non-deterministic GPU kernels amplified by GAN dynamics) |
+| v3 | v2 + ViTGAN: improved spectral norm, Adam β = (0, 0.99), G EMA | WGAN-GP | no | critic too strong; near-empty volumes |
+| stage-4 probe | only stage 4 trainable | WGAN-GP | no | no full collapse, but blurry |
+| A / C | frozen backbone, pooled (A) or per-position (C) heads | WGAN-GP | yes | fail: the gradient penalty cannot be met through a frozen backbone |
+| A-hinge / C-hinge | frozen backbone, heads with spectral norm | hinge | yes | no collapse, but φ uncontrolled without a CNN critic |
+| **B (final M2/M3)** | stages 3–4, lr 2e-5 | WGAN-GP | **yes** | **reaches M1-level quality; the only Swin-only critic that works** |
 
-**Final setup (= v2):** Swin critic `lr_d = 2e-5` with the shared Adam betas; generator, its optimizer
-and everything else identical to M1. Because the Swin runs still oscillate, every model uses
-**checkpoint selection**: after every epoch G generates volumes from two held-out seeds
-(`train.select_seeds`, never used for evaluation) and the epoch with the lowest S₂ MAE vs the model's
-own training image is saved as `G_best.pt` and evaluated (`generate.checkpoint: best`). Selection and
-evaluation use the same 2D reference, so absolute errors are slightly optimistic, equally for all
-models. The ViTGAN stabilizers stay in the code behind switches (`model.swin.isn`, `train.betas_d`,
-`train.ema_decay`), off by default.
+**Final setups.** M2/M3: probe B (Swin-T stages 3–4 + head trainable, lr 2e-5, WGAN-GP, DiffAug).
+M4/M5: M1's CNN critic plus the frozen-Swin per-position heads of C-hinge, as in Vision-aided GAN
+(Kumari et al., 2022). The generator and its optimizer are identical in every model. The ViTGAN
+stabilizers stay in the code behind switches (`model.swin.isn`, `train.betas_d`, `train.ema_decay`),
+off by default. Probe logs: `reports/probes/`, figure `reports/figures/stabilization_probes.png`.
 
-Archived runs: `models/archive_v1/` (+ `reports/metrics_v1.csv`, `reports/figures/v1/`),
-`models/archive_v2/` and `models/archive_v3/` (partial, MicroLib).
+**Checkpoint selection and evaluation.** After every epoch the generator produces 16 volumes from
+held-out seeds (`train.select_seeds`, 1000–1015); the epoch with the lowest S₂ MAE vs the model's own
+training image is saved as `G_best.pt`. That checkpoint is evaluated on 128 *different* seeds
+(`generate.seeds`, 0–127) with bootstrap confidence intervals. Single 64³ volumes are small samples
+(phase fraction varies by ±0.05 between volumes): earlier protocols with 2 selection and 4 evaluation
+seeds (run v5) produced rankings that reversed on more seeds, and choosing the best of 50 noisy epoch
+scores is optimistic (winner's curse), which independent evaluation seeds remove from the reported
+numbers. A selection-free summary (median held-out S₂ MAE over the second half of training) is reported
+as well.
+
+Archived runs: `models/archive_v1/` … `models/archive_v5/` (v1: `reports/metrics_v1.csv`,
+`reports/figures/v1/`; v5: `reports/metrics_v5_2seed_selection.csv`, `reports/figures/v5/`) and
+`models/archive_probes/`; all of them can be imported into MLflow (`make mlflow-backfill`).
 
 ### SAM phase front-end (M3)
 
@@ -243,19 +259,21 @@ make eval DATA=configs/data/microlib_000210.yaml   # real
 make test                                          # pytest
 ```
 
-`make eval` runs `src.models.generate` for M1/M2/M3 and then `src.visualization.visualize`:
+`make eval` runs `src.models.generate` for every model and then `src.visualization.visualize`:
 
-- **generate** loads `G_last.pt`, generates one 64³ volume per seed in `generate.seeds` (N = 4) and
-  saves them as `models/<name>/<run>/volumes/*.tif` (0/255). It scores them against two 2D
-  references: `train`, the image the model was trained on (Otsu map for M1/M2, SAM map for M3),
-  and `common`, shared by all models of a dataset so that M2 vs M3 is a fair comparison (the exact
-  ground-truth mask for synthetic, the Otsu map for MicroLib, which has no ground truth). Results go
-  to `metrics.yaml` and `curves.npz` in the run folder.
-- **visualize** upserts `reports/metrics.csv` (one row per dataset × model × reference; columns
-  include `dphi`, `s2_mae`, `s2_err`, `L_mae`, `L_err`, `phi_xy/xz/yz` and the per-plane S₂/L MAE)
-  and writes to `reports/figures/`: `<name>_descriptors.png` (S₂ and L curves),
-  `<name>_qualitative.png` (training input | SAM overlay | xy, xz, yz slices | 3D isosurface),
-  `<name>_training.png` (critic Wasserstein estimate) and `pipeline.png`.
+- **generate** loads `G_best.pt` (`generate.checkpoint`), generates one 64³ volume per seed in
+  `generate.seeds` (N = 128) and saves them as `models/<name>/<run>/volumes/*.tif` (0/255). It scores
+  them against two 2D references: `train`, the image the model was trained on (Otsu map, SAM map for
+  M3), and `common`, shared by all models of a dataset so that M2 vs M3 is a fair comparison (the exact
+  ground-truth mask for synthetic, the Otsu map for MicroLib, which has no ground truth). Results go to
+  `metrics.yaml` and `curves.npz` (incl. per-volume curves) in the run folder.
+- **visualize** upserts `reports/metrics.csv` (one row per dataset × model × reference: `dphi`, `s2_mae`,
+  `s2_err`, `L_mae`, `L_err`, per-plane values, 95 % bootstrap CIs `*_lo/*_hi`, and the late-training
+  summary `late_*`), writes `reports/comparison_vs_m1_<name>.csv` (bootstrap difference to M1 with a
+  better / worse / no-clear-difference verdict) and the figures in `reports/figures/`:
+  `<name>_descriptors.png` (S₂ and L curves), `<name>_qualitative.png` (training input | SAM overlay |
+  xy, xz, yz slices | 3D isosurface), `<name>_training.png` (critic Wasserstein estimate) and
+  `pipeline.png`; then exports the viewer data.
 
 Metric definitions are in `reports/report.md` §4.
 

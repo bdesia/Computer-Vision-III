@@ -21,7 +21,7 @@ if str(_SLICEGAN_ROOT) not in sys.path:
 from slicegan import networks as sg_networks  # noqa: E402
 from slicegan import util as sg_util  # noqa: E402
 
-# Architecture verbatim from upstream run_slicegan.py (G must stay identical across M1/M2/M3).
+# Architecture verbatim from upstream run_slicegan.py (G must stay identical across all models).
 IMAGE_TYPE = "nphase"
 LZ = 4  # spatial size of the latent cube; 4 -> 64^3 output with the rc generator
 _LAYS_G, _LAYS_D = 5, 6

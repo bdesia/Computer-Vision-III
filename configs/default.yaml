@@ -1,4 +1,4 @@
-# Base configuration shared by M1/M2/M3. Model configs override keys via `base:`.
+# Base configuration shared by all models (M1-M5). Model configs override keys via `base:`.
 seed: 42
 img_size: 64            # 2D training crop size fed to D
 volume_size: 64         # generated cube edge (64^3)
@@ -81,7 +81,7 @@ train:
   loss: wgan-gp         # wgan-gp (SliceGAN) | hinge (no GP; Projected / Vision-aided GAN, frozen backbones)
   gp_lambda: 10         # wgan-gp only
   # SliceGAN Algorithm 1 (paper Sec. 3): D sees ALL l slices per axis of every generated volume,
-  # and the generator batch is twice the critic batch (m_G = 2 m_D). Same protocol for M1/M2/M3.
+  # and the generator batch is twice the critic batch (m_G = 2 m_D). Same protocol for every model.
   m_d: 1                # volumes per critic step  -> 64 fake slices per axis
   m_g: 2                # volumes per generator step (m_G = 2 m_D) -> 128 fake slices per axis
   real_batch: 8         # real 64x64 crops per axis per critic step, also the GP pairs (upstream batch_size)

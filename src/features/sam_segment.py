@@ -269,7 +269,7 @@ def evaluate_gt_crops(cfg: dict, gray: np.ndarray, sam: np.ndarray, otsu: np.nda
                      "otsu_iou": iou_o, "otsu_dice": dice_o})
 
     result = {"crops": [{"crop": k, "y": y, "x": x} for k, (y, x) in enumerate(origins)],
-              "gt_source": "synthetic ground truth" if full_gt is not None else "manual correction"}
+              "gt_source": "synthetic ground truth" if full_gt is not None else "none (see reference_scores)"}
     if rows:
         result["per_crop"] = rows
         for key in ("sam_iou", "sam_dice", "otsu_iou", "otsu_dice"):
@@ -278,8 +278,8 @@ def evaluate_gt_crops(cfg: dict, gray: np.ndarray, sam: np.ndarray, otsu: np.nda
                  result["gt_source"], result["mean_sam_iou"], result["mean_sam_dice"],
                  result["mean_otsu_iou"], result["mean_otsu_dice"])
     else:
-        log.warning("No GT crops in %s yet: correct crop_XX_sam.png by hand and save as crop_XX_gt.png, "
-                    "then rerun `make sam`.", gt_dir)
+        log.info("No ground-truth crops in %s (real data); SAM quality is reported against the "
+                 "annotation reference instead (reference_scores).", gt_dir)
     with (gt_dir / "metrics.yaml").open("w", encoding="utf-8") as fh:
         yaml.safe_dump(result, fh, sort_keys=False)
     return result
