@@ -32,6 +32,7 @@ def _cfg(tmp_path, model="m1_cnn"):
                                  "sam": str(root / "processed" / "train_sam")}
     cfg["data"]["synthetic"]["canvas"] = 128
     cfg["generate"]["seeds"] = [0, 1]
+    cfg["generate"]["validation_seeds"] = [5, 6]
     cfg["metrics"].update(n_volumes_eval=2, s2_rmax=8)
     return cfg
 
@@ -87,3 +88,21 @@ def test_late_training_summary_uses_second_half_of_epochs(tmp_path):
     assert out["late_epochs"] == "3-4" and out["late_collapsed"] == 0
     assert abs(out["late_s2_median"] - 0.03) < 1e-12 and abs(out["late_phi_median"] - 0.25) < 1e-12
     assert late_training_summary(tmp_path / "missing") == {}
+
+
+def test_auto_checkpoint_selection_over_best_last_and_snapshots(tmp_path):
+    from src.models.generate import candidate_checkpoints, select_checkpoint
+
+    cfg = _cfg(tmp_path)
+    build_dataset(cfg)
+    run_dir = Path(cfg["paths"]["models"]) / cfg["run_name"]
+    torch.manual_seed(0)
+    g = build_generator(cfg, run_dir, training=True)
+    torch.save(g.state_dict(), run_dir / "G_last.pt")
+    assert select_checkpoint(cfg, run_dir, "cpu") == ("G_last.pt", {})      # single candidate: no scoring
+    (run_dir / "snapshots").mkdir()
+    torch.save({k: (v.half() if v.is_floating_point() else v) for k, v in g.state_dict().items()},
+               run_dir / "snapshots" / "G_epoch005.pt")                         # half precision loads too
+    assert candidate_checkpoints(run_dir) == ["G_last.pt", "snapshots/G_epoch005.pt"]
+    chosen, scores = select_checkpoint(cfg, run_dir, "cpu")
+    assert set(scores) == {"G_last.pt", "snapshots/G_epoch005.pt"} and chosen == min(scores, key=scores.get)

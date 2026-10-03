@@ -65,7 +65,7 @@ def test_only_swin_critics_use_lower_lr_and_all_select_best():
     assert {t["lr_g"] for t in lrs.values()} == {1e-4}  # generator schedule identical
     for name in lrs:
         cfg = load_config(CONFIGS / f"{name}.yaml")
-        assert cfg["generate"]["checkpoint"] == "best"
+        assert cfg["generate"]["checkpoint"] == "auto"
         assert not set(cfg["train"]["select_seeds"]) & set(cfg["generate"]["seeds"])  # held-out seeds
 
 

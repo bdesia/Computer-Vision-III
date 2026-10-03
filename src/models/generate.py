@@ -43,6 +43,41 @@ def generate_volumes(netG: torch.nn.Module, seeds: list[int], z_channels: int, d
     return volumes
 
 
+def candidate_checkpoints(run_dir: Path) -> list[str]:
+    """Checkpoint files (relative to run_dir) a model can be evaluated from: best, last and snapshots."""
+    names = [n for n in ("G_best.pt", "G_last.pt") if (run_dir / n).exists()]
+    names += sorted(p.relative_to(run_dir).as_posix() for p in (run_dir / "snapshots").glob("G_epoch*.pt"))
+    return names
+
+
+def select_checkpoint(cfg: dict, run_dir: Path, device) -> tuple[str, dict[str, float]]:
+    """Pick the candidate with the lowest S2 MAE vs the model's own training image on validation seeds.
+
+    Validation seeds (`generate.validation_seeds`) are disjoint from the per-epoch selection seeds used
+    during training and from the evaluation seeds, so the reported metrics stay unbiased.
+    """
+    from src.features.descriptors import s2_mae, s2_radial, s2_volume
+
+    candidates = candidate_checkpoints(run_dir)
+    if not candidates:
+        raise FileNotFoundError(f"No generator checkpoint in {run_dir}; train the model first.")
+    if len(candidates) == 1:
+        return candidates[0], {}
+    seeds = cfg["generate"]["validation_seeds"]
+    rmax = cfg["metrics"]["s2_rmax"]
+    ref = references(cfg)["train"]
+    s2_ref = s2_radial(ref, rmax)
+    scores = {}
+    for name in candidates:
+        netG = load_generator(cfg, run_dir, device, checkpoint=name)
+        vols = generate_volumes(netG, seeds, cfg["z_channels"], device)
+        scores[name] = s2_mae(np.mean([s2_volume(v, rmax)["mean"] for v in vols], axis=0), s2_ref)
+        log.info("validation (%d seeds) %s: S2 MAE %.4f", len(seeds), name, scores[name])
+    best = min(scores, key=scores.get)
+    log.info("Selected %s on validation seeds", best)
+    return best, scores
+
+
 def references(cfg: dict) -> dict[str, np.ndarray]:
     """2D label maps to compare against: the model's own training image, plus the common reference.
 
@@ -70,10 +105,16 @@ def evaluate(cfg: dict) -> dict:
                          f"{cfg['metrics']['n_volumes_eval']}")
 
     tag = cfg["generate"].get("checkpoint", "last")
-    if not (run_dir / f"G_{tag}.pt").exists() and tag != "last":
-        log.warning("No G_%s.pt in %s (older run?); using G_last.pt", tag, run_dir)
-        tag = "last"
-    netG = load_generator(cfg, run_dir, device, checkpoint=f"G_{tag}.pt")
+    val_scores: dict[str, float] = {}
+    if tag == "auto":
+        ckpt, val_scores = select_checkpoint(cfg, run_dir, device)
+    else:
+        ckpt = f"G_{tag}.pt"
+        if not (run_dir / ckpt).exists() and tag != "last":
+            log.warning("No %s in %s (older run?); using G_last.pt", ckpt, run_dir)
+            ckpt = "G_last.pt"
+    tag = ckpt
+    netG = load_generator(cfg, run_dir, device, checkpoint=ckpt)
     volumes = generate_volumes(netG, seeds, cfg["z_channels"], device)
     vol_dir = run_dir / "volumes"
     vol_dir.mkdir(parents=True, exist_ok=True)
@@ -87,6 +128,9 @@ def evaluate(cfg: dict) -> dict:
 
     summary = {"dataset": cfg["data"]["name"], "model": cfg["run_name"], "seeds": list(seeds),
                "checkpoint": tag, "references": {}}
+    if val_scores:
+        summary["checkpoint_validation"] = {"seeds": len(cfg["generate"]["validation_seeds"]),
+                                            "s2_mae_vs_train": {k: float(v) for k, v in val_scores.items()}}
     if (run_dir / "selection.yaml").exists():
         summary["selection"] = yaml.safe_load((run_dir / "selection.yaml").read_text(encoding="utf-8"))
     curves = {}

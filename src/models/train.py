@@ -337,6 +337,16 @@ def _train(cfg: dict, tracker: Tracker) -> Path:
             log.info("Selection ep %d: val phi=%.4f S2 MAE=%.4f%s (best: ep %s, %.4f)", epoch,
                      score["val_phi"], score["val_s2_mae"], " *" if improved else "", best["epoch"],
                      best["val_s2_mae"])
+        # ---- Half-precision generator snapshots: candidates for validation-seed selection (generate.py)
+        snap_every = tcfg.get("snapshot_every")
+        if snap_every and (epoch % snap_every == 0 or epoch == cfg["epochs"]):
+            snap_dir = run_dir / "snapshots"
+            snap_dir.mkdir(exist_ok=True)
+            try:
+                torch.save({k: (v.half() if v.is_floating_point() else v) for k, v in netG_eval.state_dict().items()},
+                           snap_dir / f"G_epoch{epoch:03d}.pt")
+            except OSError as exc:
+                log.error("Could not save snapshot for epoch %d: %s", epoch, exc)
         if stop:
             break
 
