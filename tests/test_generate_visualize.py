@@ -59,6 +59,13 @@ def test_generate_evaluate_and_visualize(tmp_path):
     write_metrics_csv(collect_metrics([run_dir]), csv_path)  # upsert, not duplicate
     rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
     assert len(rows) == 2 and {"dphi", "s2_mae", "s2_err", "L_mae", "phi_xy", "phi_xz", "phi_yz"} <= set(rows[0])
+    for r in rows:  # bootstrap 95 % CIs bracket the reported values
+        assert float(r["s2_mae_lo"]) <= float(r["s2_mae"]) <= float(r["s2_mae_hi"]) + 1e-9
+    import numpy as np
+    curves = np.load(run_dir / "curves.npz")
+    assert curves["common_s2_per_volume"].shape == (2, 9) and curves["common_phi_per_volume"].shape == (2,)
+    from src.visualization.visualize import write_comparison
+    assert write_comparison([run_dir], tmp_path / "cmp.csv") == []   # only the baseline itself
 
     fig_dir = Path(cfg["paths"]["figures"])
     plot_descriptor_curves([run_dir], "synthetic", fig_dir / "curves.png")

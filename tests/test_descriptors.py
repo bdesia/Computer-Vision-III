@@ -172,3 +172,26 @@ def test_lineal_path_volume_planes_of_extruded_image():
     assert np.allclose(curves["xy"], lineal_path(img, 6))
     # Along z every column is constant, so the xz/yz planes are more connected than xy
     assert curves["xz"][6] > curves["xy"][6] and curves["yz"][6] > curves["xy"][6]
+
+
+def test_bootstrap_ci_brackets_estimate_and_detects_differences():
+    from src.features.descriptors import bootstrap_metrics, confidence_interval
+
+    rng = np.random.default_rng(0)
+    s2_ref = np.array([0.25, 0.15, 0.08, 0.065])
+    good = s2_ref + rng.normal(0, 0.01, size=(32, 4))           # unbiased volumes
+    bad = s2_ref + 0.03 + rng.normal(0, 0.01, size=(32, 4))     # biased volumes
+    phis_good, phis_bad = good[:, 0], bad[:, 0]
+    bg = bootstrap_metrics(phis_good, good, s2_ref, seed=1)
+    bb = bootstrap_metrics(phis_bad, bad, s2_ref, seed=2)
+    point = np.abs(good.mean(0) - s2_ref).mean()
+    lo, hi = confidence_interval(bg["s2_mae"])
+    assert lo <= point <= hi + 1e-12
+    d_lo, d_hi = confidence_interval(bb["s2_mae"] - bg["s2_mae"])
+    assert d_lo > 0                                               # clearly worse
+    same_lo, same_hi = confidence_interval(bootstrap_metrics(phis_good, good, s2_ref, seed=3)["s2_mae"]
+                                           - bg["s2_mae"])
+    assert same_lo < 0 < same_hi                                  # same model: no difference
+    assert set(bootstrap_metrics(phis_good, good, s2_ref, good, s2_ref)) == {"abs_dphi", "s2_mae", "L_mae"}
+    with pytest.raises(ValueError):
+        bootstrap_metrics(phis_good[:1], good[:1], s2_ref)

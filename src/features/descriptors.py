@@ -178,6 +178,9 @@ def describe_volumes(
         "s2_err": relative_error(s2_mean["mean"], s2_ref),
         "s2_train": s2_ref,
         "s2_generated": s2_mean["mean"],
+        # per-volume values, for bootstrap confidence intervals over volumes
+        "phi_per_volume": phis,
+        "s2_per_volume": np.stack([c["mean"] for c in s2_by_vol]),
     }
     for plane, slices_axis in (("xy", 0), ("xz", 1), ("yz", 2)):
         slice_phi = np.stack([indicator(v, phase).mean(axis=tuple(a for a in range(3) if a != slices_axis))
@@ -195,7 +198,43 @@ def describe_volumes(
             "L_err": relative_error(l_mean["mean"], l_ref),
             "L_train": l_ref,
             "L_generated": l_mean["mean"],
+            "L_per_volume": np.stack([c["mean"] for c in l_by_vol]),
         })
         for plane in ("xy", "xz", "yz"):
             out[f"L_mae_{plane}"] = s2_mae(l_mean[plane], l_ref)
     return out
+
+
+def bootstrap_metrics(
+    phis: np.ndarray,
+    s2_per_volume: np.ndarray,
+    s2_ref: np.ndarray,
+    l_per_volume: np.ndarray | None = None,
+    l_ref: np.ndarray | None = None,
+    n_boot: int = 2000,
+    seed: int = 0,
+) -> dict[str, np.ndarray]:
+    """Bootstrap distributions of |dphi|, S2 MAE and L MAE, resampling the generated volumes.
+
+    Each replicate draws N volumes with replacement and recomputes the metrics exactly as reported:
+    |mean phi - phi_ref| and the MAE of the mean curve vs the reference curve. phi_ref = S2_ref(0).
+    """
+    phis, s2_per_volume = np.asarray(phis), np.asarray(s2_per_volume)
+    n = len(phis)
+    if n < 2:
+        raise ValueError("Need at least two volumes for a bootstrap")
+    idx = np.random.default_rng(seed).integers(0, n, size=(n_boot, n))
+    out = {
+        "abs_dphi": np.abs(phis[idx].mean(axis=1) - float(s2_ref[0])),
+        "s2_mae": np.abs(s2_per_volume[idx].mean(axis=1) - s2_ref).mean(axis=-1),
+    }
+    if l_per_volume is not None and l_ref is not None:
+        out["L_mae"] = np.abs(np.asarray(l_per_volume)[idx].mean(axis=1) - l_ref).mean(axis=-1)
+    return out
+
+
+def confidence_interval(samples: np.ndarray, level: float = 0.95) -> tuple[float, float]:
+    """Percentile confidence interval of a bootstrap distribution."""
+    tail = 100 * (1 - level) / 2
+    lo, hi = np.percentile(np.asarray(samples), [tail, 100 - tail])
+    return float(lo), float(hi)

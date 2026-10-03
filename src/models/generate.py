@@ -17,7 +17,8 @@ from src.visualization.visualize import plot_volume_slices
 
 log = get_logger(__name__)
 
-CURVE_KEYS = ("s2_train", "s2_generated", "L_train", "L_generated")
+CURVE_KEYS = ("s2_train", "s2_generated", "L_train", "L_generated",
+              "phi_per_volume", "s2_per_volume", "L_per_volume")
 
 
 def load_generator(cfg: dict, run_dir: Path, device, checkpoint: str = "G_last.pt") -> torch.nn.Module:

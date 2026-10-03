@@ -31,7 +31,25 @@ METRIC_COLUMNS = [
     "s2_mae", "s2_mae_std", "s2_err", "L_mae", "L_err",
     "phi_xy", "phi_xz", "phi_yz", "phi_slice_std_xy", "phi_slice_std_xz", "phi_slice_std_yz",
     "s2_mae_xy", "s2_mae_xz", "s2_mae_yz", "L_mae_xy", "L_mae_xz", "L_mae_yz",
+    "dphi_lo", "dphi_hi", "s2_mae_lo", "s2_mae_hi", "L_mae_lo", "L_mae_hi",  # 95 % bootstrap CIs
 ]
+
+COMPARISON_COLUMNS = ["dataset", "reference", "model", "baseline", "metric", "model_value", "baseline_value",
+                      "diff", "diff_lo", "diff_hi", "verdict"]
+
+
+def bootstrap_from_curves(run_dir: Path, reference: str, n_boot: int = 2000, seed: int = 0) -> dict | None:
+    """Bootstrap distributions for one run/reference from curves.npz (None if per-volume data is missing)."""
+    from src.features.descriptors import bootstrap_metrics
+
+    curves = np.load(run_dir / "curves.npz")
+    key = f"{reference}_phi_per_volume"
+    if key not in curves:
+        return None
+    l_vol = curves.get(f"{reference}_L_per_volume")
+    l_ref = curves.get(f"{reference}_L_train")
+    return bootstrap_metrics(curves[key], curves[f"{reference}_s2_per_volume"], curves[f"{reference}_s2_train"],
+                             l_vol, l_ref, n_boot=n_boot, seed=seed)
 
 
 def _style_axes(ax) -> None:
@@ -79,6 +97,13 @@ def collect_metrics(run_dirs: list[Path]) -> list[dict]:
             row = {"dataset": summary["dataset"], "model": summary["model"], "reference": ref,
                    "phi_ref": m["phi_train"], "dphi": m["abs_dphi"]}
             row.update({k: m.get(k) for k in METRIC_COLUMNS if k not in row and k in m})
+            from src.features.descriptors import confidence_interval
+
+            boot = bootstrap_from_curves(run_dir, ref)
+            if boot is not None:
+                for metric, col in (("abs_dphi", "dphi"), ("s2_mae", "s2_mae"), ("L_mae", "L_mae")):
+                    if metric in boot:
+                        row[f"{col}_lo"], row[f"{col}_hi"] = confidence_interval(boot[metric])
             rows.append(row)
     return rows
 
@@ -99,6 +124,50 @@ def write_metrics_csv(rows: list[dict], path: str | Path) -> None:
         writer.writeheader()
         for r in all_rows:
             writer.writerow({k: (f"{v:.6g}" if isinstance(v, float) else v) for k, v in r.items()})
+
+
+def write_comparison(run_dirs: list[Path], path: str | Path, baseline: str = "m1_cnn",
+                     reference: str = "common") -> list[dict]:
+    """Bootstrap difference (model - baseline) of |dphi|, S2 MAE and L MAE with 95 % CIs.
+
+    Volumes of different models are independent samples, so each model is resampled independently;
+    a difference whose CI excludes 0 is reported as better / worse, otherwise as no clear difference.
+    """
+    from src.features.descriptors import confidence_interval
+
+    base_dir = next((d for d in run_dirs if d.name == baseline), None)
+    if base_dir is None:
+        return []
+    base = bootstrap_from_curves(base_dir, reference, seed=1)
+    if base is None:
+        return []
+    dataset = yaml.safe_load((base_dir / "metrics.yaml").read_text(encoding="utf-8"))["dataset"]
+    rows = []
+    for i, run_dir in enumerate(run_dirs):
+        if run_dir.name == baseline:
+            continue
+        boot = bootstrap_from_curves(run_dir, reference, seed=100 + i)
+        if boot is None:
+            continue
+        for metric in ("abs_dphi", "s2_mae", "L_mae"):
+            if metric not in boot or metric not in base:
+                continue
+            diff = boot[metric] - base[metric]
+            lo, hi = confidence_interval(diff)
+            verdict = "better" if hi < 0 else "worse" if lo > 0 else "no clear difference"
+            rows.append({"dataset": dataset, "reference": reference, "model": run_dir.name,
+                         "baseline": baseline, "metric": metric,
+                         "model_value": float(np.median(boot[metric])),
+                         "baseline_value": float(np.median(base[metric])),
+                         "diff": float(np.median(diff)), "diff_lo": lo, "diff_hi": hi, "verdict": verdict})
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, COMPARISON_COLUMNS)
+        writer.writeheader()
+        for r in rows:
+            writer.writerow({k: (f"{v:.6g}" if isinstance(v, float) else v) for k, v in r.items()})
+    return rows
 
 
 # --------------------------------------------------------------------------- descriptor curves
@@ -298,6 +367,7 @@ def main() -> None:
 
     try:
         write_metrics_csv(collect_metrics(run_dirs), Path(cfgs[0]["paths"]["reports"]) / "metrics.csv")
+        write_comparison(run_dirs, Path(cfgs[0]["paths"]["reports"]) / f"comparison_vs_m1_{dataset}.csv")
         plot_descriptor_curves(run_dirs, dataset, fig_dir / f"{dataset}_descriptors.png")
         plot_training_curves(run_dirs, dataset, fig_dir / f"{dataset}_training.png")
         plot_qualitative_panel(cfgs, fig_dir / f"{dataset}_qualitative.png")
