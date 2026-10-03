@@ -148,7 +148,7 @@ S₂(r) and L(r), overall and per slice orientation, with bootstrap confidence i
 
 **Stack.** Python 3.11, PyTorch 2.5.1 (CUDA 12.4), timm 1.0.11, Hugging Face `transformers` 4.46.3,
 NumPy/SciPy/scikit-image, Poetry environment (`setup.sh`), YAML configs with inheritance and dataset
-overlays, logging to file and console, MLflow experiment tracking, 74 pytest tests. Trained on one NVIDIA RTX A2000 (12 GB).
+overlays, logging to file and console, MLflow experiment tracking, 81 pytest tests. Trained on one NVIDIA RTX A2000 (12 GB).
 
 **Pretrained models.**
 
@@ -193,8 +193,8 @@ tiling).
 **Main modules.** `src/data/make_dataset.py` (download, crop, Otsu, crops), `src/features/sam_segment.py`
 (SAM front-end), `src/features/descriptors.py` (φ, S₂, L), `src/models/discriminator_swin.py` (Swin
 critics), `src/models/train.py`, `src/models/generate.py` (volumes + metrics),
-`src/visualization/visualize.py` (figures, `metrics.csv`) and an interactive volume viewer
-(`reports/viewer/`).
+`src/visualization/visualize.py` (figures, `metrics.csv`), an interactive volume viewer
+(`reports/viewer/`) and the exploratory notebook `notebooks/00_eda.ipynb`.
 
 ## 4. Evaluation
 
@@ -355,7 +355,7 @@ between the best MicroLib models (0.001–0.003). This is why every model is sco
 training map and, separately, against a common reference (§4).
 
 The EDA also shows that the micrograph is mildly banded along x: the correlation length is about 23 px
-along x vs 19 px along y. SliceGAN assumes the same statistics on all three planes, and the D4 crop
+along x vs 19 px along y (S₂ within 5 % of its plateau). SliceGAN assumes the same statistics on all three planes, and the D4 crop
 augmentation symmetrizes x and y on purpose, so the generators learn an isotropic version of the
 structure. The radially averaged metrics are insensitive to this, but no model here reproduces the
 banding direction.
