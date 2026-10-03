@@ -9,3 +9,7 @@ Kept because v1 shows the Swin-critic instability that motivated v2.
   also cut from the end of its log. The v1 config equals the
   current m2_swin.yaml without the `train.lr_d: 2.0e-5` override and without checkpoint selection.
   Its evaluation outputs (volumes/, metrics.yaml, curves.npz) are intact.
+
+- 2026-10-03: `microlib_000210/m2_swin/config.yaml` rebuilt from the configs at the v1 commit (shared
+  lr_d 1e-4, no DiffAug, no selection, last checkpoint, 4 evaluation seeds) so the run can be imported
+  into MLflow; it carries a `reconstructed` key.

@@ -12,6 +12,7 @@ import yaml
 
 from src.features.descriptors import describe_volumes
 from src.models.slicegan_wrapper import build_generator, load_label_map, sample_noise, to_labels
+from src.tracking import RUN_ID_FILE, Tracker, eval_metrics
 from src.utils import get_device, get_logger, load_config, set_seed, setup_logging
 from src.visualization.visualize import plot_volume_slices
 
@@ -105,6 +106,12 @@ def evaluate(cfg: dict) -> dict:
     with (run_dir / "metrics.yaml").open("w", encoding="utf-8") as fh:
         yaml.safe_dump(summary, fh, sort_keys=False)
     log.info("Saved %d volumes, metrics.yaml and curves.npz -> %s", len(volumes), run_dir)
+    if (run_dir / RUN_ID_FILE).exists():  # add evaluation to the training run's MLflow record
+        tracker = Tracker(cfg, run_dir)
+        tracker.start(resume=True)
+        tracker.metrics(eval_metrics(summary))
+        tracker.artifacts([run_dir / n for n in ("metrics.yaml", "curves.npz", "volume_slices.png")])
+        tracker.end()
     return summary
 
 

@@ -30,6 +30,7 @@ from src.models.slicegan_wrapper import (
     to_labels,
     volume_to_slices,
 )
+from src.tracking import Tracker
 from src.utils import get_device, get_logger, load_config, set_seed, setup_logging
 from src.visualization.visualize import plot_volume_slices
 
@@ -145,6 +146,23 @@ def _save_checkpoint(run_dir: Path, netG, critics: list[CriticBranch], tag: str)
 
 
 def train(cfg: dict) -> Path:
+    """Train one model; optionally tracked in MLflow (`tracking.mlflow`), marked FAILED on errors."""
+    run_dir = Path(cfg["paths"]["models"]) / cfg["run_name"]
+    run_dir.mkdir(parents=True, exist_ok=True)
+    tracker = Tracker(cfg, run_dir)
+    tracker.start()
+    try:
+        out = _train(cfg, tracker)
+    except BaseException:
+        tracker.end("FAILED")
+        raise
+    tracker.artifacts([run_dir / n for n in ("config.yaml", "history.csv", "selection.csv", "selection.yaml")])
+    tracker.artifacts([run_dir / "previews"])
+    tracker.end()
+    return out
+
+
+def _train(cfg: dict, tracker: Tracker) -> Path:
     """Run WGAN-GP training as in SliceGAN Algorithm 1 (isotropic: one critic for the three axes).
 
     Each critic step generates m_d volumes and shows the critic all l slices per axis of each; each
@@ -281,6 +299,8 @@ def train(cfg: dict) -> Path:
                 last_log = now
                 with history_path.open("a", newline="", encoding="utf-8") as fh:
                     csv.DictWriter(fh, HISTORY_FIELDS).writerow(row)
+                tracker.metrics({f"train_{k}": v for k, v in row.items() if k not in ("epoch", "g_step")},
+                                step=g_step)
                 total_steps = cfg["epochs"] * cfg["iters_per_epoch"]
                 eta_min = row["sec_per_g_step"] * (total_steps - g_step) / 60
                 log.info(
@@ -313,6 +333,7 @@ def train(cfg: dict) -> Path:
             with selection_path.open("a", newline="", encoding="utf-8") as fh:
                 csv.DictWriter(fh, SELECTION_FIELDS).writerow(
                     {"epoch": epoch, "g_step": g_step, **score, "best": int(improved)})
+            tracker.metrics(score, step=epoch)
             log.info("Selection ep %d: val phi=%.4f S2 MAE=%.4f%s (best: ep %s, %.4f)", epoch,
                      score["val_phi"], score["val_s2_mae"], " *" if improved else "", best["epoch"],
                      best["val_s2_mae"])
@@ -324,6 +345,7 @@ def train(cfg: dict) -> Path:
                         "val_phi": best.get("val_phi"), "val_s2_mae": best["val_s2_mae"],
                         "select_seeds": list(tcfg["select_seeds"]), "criterion": "S2 MAE vs own training image"},
                        fh, sort_keys=False)
+    tracker.metrics({f"best_{k}": v for k, v in best.items() if k in ("epoch", "val_phi", "val_s2_mae")})
     log.info("Training finished in %.1f min -> %s (best checkpoint: epoch %s, val S2 MAE %.4f)",
              (time.time() - start) / 60, run_dir, best["epoch"], best["val_s2_mae"])
     return run_dir

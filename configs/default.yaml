@@ -125,3 +125,11 @@ metrics:
 
 logging:
   level: INFO
+
+# Optional MLflow tracking (local file store; browse with `mlflow ui --backend-store-uri ./mlruns`).
+# Finished runs can be imported with `python -m src.tracking <models_dir>=<version> ...`.
+tracking:
+  mlflow: false
+  uri: file:./mlruns
+  experiment_prefix: slicegan-vit   # one experiment per dataset: slicegan-vit-<data.name>
+  version: v6                       # tag identifying the experimental protocol of new runs
