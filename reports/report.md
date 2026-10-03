@@ -155,20 +155,37 @@ reported.
 
 ## 5. Results and examples
 
-### 5.1 Main results (MicroLib 000210, common reference = Otsu map, best checkpoint, N = 128)
+### 5.1 Main results (MicroLib 000210)
 
-| Model | φ (mean ± std) | \|Δφ\| | S₂ MAE | err(S₂) | L MAE | S₂ MAE xy / xz / yz |
-|-------|----------------|--------|--------|---------|-------|---------------------|
-| M1 CNN | TBD | TBD | TBD | TBD | TBD | TBD |
-| M2 Swin | TBD | TBD | TBD | TBD | TBD | TBD |
-| M3 Swin + SAM | TBD | TBD | TBD | TBD | TBD | TBD |
-| M4 CNN + Swin | TBD | TBD | TBD | TBD | TBD | TBD |
-| M5 M1 + Swin fine-tune | TBD | TBD | TBD | TBD | TBD | TBD |
-| M1 extended | TBD | TBD | TBD | TBD | TBD | TBD |
+Train / validation / test protocol (Section 3): each model's checkpoint is chosen among the per-epoch
+best, the last epoch and the training snapshots on 128 validation seeds, then evaluated on 128 test
+volumes against the common reference (Otsu map, φ = 0.232). Brackets: 95 % bootstrap intervals.
+"Typical" is the selection-free median held-out S₂ MAE over the second half of training (16 seeds per
+epoch, so on a different scale from the test columns).
 
-Figures: `figures/microlib_000210_qualitative.png` (training input | SAM overlay | xy, xz, yz slices |
-3D isosurface), `figures/microlib_000210_descriptors.png` (S₂ and L curves),
-`figures/microlib_000210_training.png`, and the interactive viewer.
+| Model | Checkpoint | φ | \|Δφ\| | S₂ MAE | L MAE | Typical S₂ | vs M1 |
+|-------|------------|---|--------|--------|-------|------------|-------|
+| M1 CNN (SliceGAN) | last | 0.235 | 0.003 [0.000, 0.012] | 0.0029 [0.0008, 0.0087] | 0.0011 [0.0003, 0.0059] | **0.0051** | — |
+| M1 + DiffAug | last | 0.229 | 0.003 [0.000, 0.012] | **0.0009** [0.0006, 0.0066] | 0.0014 [0.0010, 0.0059] | 0.0136 | no clear difference |
+| M2 Swin + DiffAug | best | 0.239 | 0.007 [0.000, 0.017] | 0.0077 [0.0017, 0.0141] | 0.0055 [0.0010, 0.0109] | 0.0132 | no clear difference |
+| M3 Swin + DiffAug, SAM map | last | 0.174 | 0.058 [0.050, 0.066] | 0.0328 [0.0281, 0.0371] | 0.0262 [0.0223, 0.0299] | 0.0143 | **worse** (all metrics) |
+| M4 CNN + frozen Swin | best (= last) | **0.232** | **0.000** [0.000, 0.009] | 0.0014 [0.0006, 0.0067] | 0.0015 [0.0006, 0.0058] | 0.0096 | no clear difference |
+| M5 M1 + Swin fine-tune | last | 0.243 | 0.010 [0.001, 0.020] | 0.0097 [0.0033, 0.0161] | 0.0092 [0.0038, 0.0147] | 0.0072 | worse on L |
+| M1 extended | last | 0.238 | 0.006 [0.000, 0.015] | 0.0059 [0.0010, 0.0124] | 0.0059 [0.0019, 0.0114] | 0.0097 | no clear difference |
+
+All errors are far below the random-volume floor (S₂ MAE 0.042, L MAE 0.077). The CNN-based models
+(M1, M1 + DiffAug, M4) form the best group: their point estimates are the lowest and their intervals
+overlap. M4, the CNN + frozen-Swin ensemble, reproduces the phase fraction exactly (0.232) and needed no
+checkpoint selection (its best epoch is its last). No model is significantly better than M1 with 128 test
+volumes; M3 is significantly worse, because its training image (the SAM map) has a lower phase fraction
+and different morphology than the Otsu reference, and its last checkpoint undershoots φ further.
+
+![Descriptor curves](figures/microlib_000210_descriptors.png)
+
+![Qualitative comparison](figures/microlib_000210_qualitative.png)
+
+Per-model training curves: `figures/microlib_000210_training.png`; all volumes can be explored in the
+interactive viewer (`reports/viewer/`).
 
 ### 5.2 Training a Swin critic: stabilization study
 
@@ -210,19 +227,15 @@ the 8 × 8 resolution of stage 2, and a larger input could add about 10 points.
 
 ### 5.3 Fine-tuning with a Swin critic (M5 vs M1-extended)
 
-Both runs start from M1's best generator (epoch 34, held-out S₂ MAE 0.0033) and train 20 more epochs
-with fresh critics; they differ only in the critics (CNN vs CNN + frozen Swin with per-position heads).
+Both runs start from M1's selected checkpoint and train 20 more epochs with fresh critics; they differ
+only in the critics (CNN vs CNN + frozen Swin with per-position heads). Neither improves on M1: on the
+test volumes M1-extended reaches S₂ MAE 0.0059 and M5 0.0097 (M1: 0.0029), and their best per-epoch
+held-out scores were reached in the first epoch, i.e. at the starting point. Once SliceGAN has converged,
+adding the Swin critic as a fine-tuning stage (the Vision-aided GAN recipe) does not help here.
+An earlier version of this comparison (run v5, selection on 2 seeds) suggested the opposite; that result
+was selection noise and disappeared on more seeds (Section 3).
 
-![M5 vs M1 extended](figures/m5_vs_m1_extended.png)
-
-| Run | Best held-out S₂ MAE (epoch) | Epochs with S₂ MAE ≤ 0.010 |
-|-----|------------------------------|-----------------------------|
-| M1 extended (CNN only) | 0.0051 (8) | 2 / 20 |
-| M5 (CNN + Swin, λ = 1) | **0.0025** (13) | **7 / 20** |
-
-**TBD — superseded.** These numbers come from run v5, whose checkpoint selection used only 2 held-out
-seeds; on 32 fresh seeds the apparent advantage of M5 disappeared. The section is rewritten with the
-run-v6 numbers (16 selection seeds, 128 evaluation seeds, confidence intervals).
+![M5 vs M1 extended (run v5 selection traces)](figures/m5_vs_m1_extended.png)
 
 ### 5.4 SAM front-end
 
