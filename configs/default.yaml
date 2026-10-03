@@ -63,6 +63,7 @@ model:
     feature_stages: [2, 3, 4]   # multiscale head only
     head_hidden: 256            # multiscale head only
     patch_hidden: 128           # multiscale_patch heads only (1x1 conv width)
+    head_sn: false              # spectral norm on the multiscale head layers (Projected GAN style)
 
 train:
   lr_g: 0.0001
@@ -72,7 +73,8 @@ train:
   ema_decay: null       # e.g. 0.999: EMA of G's weights (ViTGAN); off in the final runs (tried in v3)
   diffaug: null         # e.g. {policy: [translation, cutout, d4], translation: 0.125, cutout: 0.5}
   critic_iters: 5       # D updates per G update (WGAN-GP)
-  gp_lambda: 10
+  loss: wgan-gp         # wgan-gp (SliceGAN) | hinge (no GP; Projected / Vision-aided GAN, frozen backbones)
+  gp_lambda: 10         # wgan-gp only
   # SliceGAN Algorithm 1 (paper Sec. 3): D sees ALL l slices per axis of every generated volume,
   # and the generator batch is twice the critic batch (m_G = 2 m_D). Same protocol for M1/M2/M3.
   m_d: 1                # volumes per critic step  -> 64 fake slices per axis

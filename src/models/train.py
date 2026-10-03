@@ -10,6 +10,7 @@ from pathlib import Path
 
 import numpy as np
 import torch
+import torch.nn.functional as F
 import torch.optim as optim
 import yaml
 
@@ -72,6 +73,14 @@ def validation_score(netG, cfg: dict, s2_ref: np.ndarray, device) -> dict:
     return {"val_phi": float(np.mean([phase_fraction(v) for v in volumes])), "val_s2_mae": s2_mae(s2, s2_ref)}
 
 
+LOSSES = ("wgan-gp", "hinge")
+
+
+def critic_scores(netD, x: torch.Tensor, per_scale: bool) -> torch.Tensor:
+    """Critic output (N, 1), or (N, S) per-scale scores for multiscale_patch heads under hinge loss."""
+    return netD.forward_per_scale(x) if per_scale else netD(x)
+
+
 def _save_checkpoint(run_dir: Path, netG, netD, tag: str) -> None:
     """Save G and D state dicts under `run_dir` (tag: 'last' or 'epochXXX')."""
     try:
@@ -116,6 +125,11 @@ def train(cfg: dict) -> Path:
     netG_eval = copy.deepcopy(netG).requires_grad_(False) if ema_decay else netG
     netD = build_discriminator(cfg, run_dir).to(device)
     augment = build_diffaug(cfg)  # identity unless train.diffaug is set
+    loss_type = tcfg.get("loss", "wgan-gp")
+    if loss_type not in LOSSES:
+        raise ValueError(f"Unknown train.loss '{loss_type}' (expected {' | '.join(LOSSES)})")
+    # Hinge on multiscale_patch heads: loss applied per scale, then averaged (Projected GAN / Vision-aided)
+    per_scale = loss_type == "hinge" and hasattr(netD, "forward_per_scale")
     optG = optim.Adam(netG.parameters(), lr=tcfg["lr_g"], betas=tuple(tcfg["betas"]))
     betas_d = tuple(tcfg.get("betas_d") or tcfg["betas"])  # critic-only override; default = shared betas
     optD = optim.Adam([p for p in netD.parameters() if p.requires_grad], lr=tcfg["lr_d"], betas=betas_d)
@@ -127,10 +141,10 @@ def train(cfg: dict) -> Path:
     )
     log.info(
         "epochs=%d x %d G steps | critic_iters=%d | m_D=%d, m_G=%d volumes (all %d slices/axis) | "
-        "real batch=%d | augment=%s | DiffAug=%s | lr_g=%g lr_d=%g betas_d=%s | G EMA=%s",
+        "real batch=%d | augment=%s | DiffAug=%s | loss=%s%s | lr_g=%g lr_d=%g betas_d=%s | G EMA=%s",
         cfg["epochs"], cfg["iters_per_epoch"], critic_iters, m_d, m_g, l, real_batch,
-        cfg["data"]["augment"], (tcfg.get("diffaug") or {}).get("policy"), tcfg["lr_g"], tcfg["lr_d"],
-        betas_d, ema_decay or "off",
+        cfg["data"]["augment"], (tcfg.get("diffaug") or {}).get("policy"), loss_type,
+        " (per scale)" if per_scale else "", tcfg["lr_g"], tcfg["lr_d"], betas_d, ema_decay or "off",
     )
 
     history_path = run_dir / "history.csv"
@@ -153,14 +167,21 @@ def train(cfg: dict) -> Path:
             for perm in SLICE_PERMUTATIONS:
                 netD.zero_grad(set_to_none=True)
                 real = augment(sampler(real_batch))
-                out_real = netD(real).view(-1).mean()
                 fake_slices = augment(volume_to_slices(fake, perm))  # all l * m_d slices
-                out_fake = netD(fake_slices).mean()
-                # Upstream GP: real batch vs the first real_batch fake slices
-                gp = calc_gradient_penalty(
-                    netD, real, fake_slices[:real_batch], real_batch, l, device, tcfg["gp_lambda"], nc
-                )
-                (out_fake - out_real + gp).backward()
+                if loss_type == "wgan-gp":
+                    out_real = netD(real).view(-1).mean()
+                    out_fake = netD(fake_slices).mean()
+                    # Upstream GP: real batch vs the first real_batch fake slices
+                    gp = calc_gradient_penalty(
+                        netD, real, fake_slices[:real_batch], real_batch, l, device, tcfg["gp_lambda"], nc
+                    )
+                    (out_fake - out_real + gp).backward()
+                else:  # hinge, no gradient penalty
+                    s_real = critic_scores(netD, real, per_scale)
+                    s_fake = critic_scores(netD, fake_slices, per_scale)
+                    out_real, out_fake = s_real.mean(), s_fake.mean()
+                    gp = torch.zeros((), device=device)
+                    (F.relu(1.0 - s_real).mean() + F.relu(1.0 + s_fake).mean()).backward()
                 optD.step()
 
             # ---- Generator: every critic_iters critic iterations
@@ -170,7 +191,7 @@ def train(cfg: dict) -> Path:
             fake = netG(sample_noise(m_g, nz, device))
             err_g = 0.0
             for perm in SLICE_PERMUTATIONS:
-                err_g = err_g - netD(augment(volume_to_slices(fake, perm))).mean()
+                err_g = err_g - critic_scores(netD, augment(volume_to_slices(fake, perm)), per_scale).mean()
             err_g.backward()
             optG.step()
             g_step += 1

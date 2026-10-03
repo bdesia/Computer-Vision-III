@@ -82,6 +82,17 @@ def apply_improved_spectral_norm(module: nn.Module) -> int:
     return count
 
 
+def apply_head_spectral_norm(critic: "SwinCritic") -> int:
+    """Standard spectral norm (sigma = 1) on every Linear / Conv2d of the trainable heads."""
+    count = 0
+    for head in critic.heads():
+        for layer in head.modules():
+            if isinstance(layer, (nn.Linear, nn.Conv2d)):
+                nn.utils.parametrizations.spectral_norm(layer)
+                count += 1
+    return count
+
+
 class PatchScoreHead(nn.Module):
     """Per-position critic head on one NHWC token map: LayerNorm(C) -> 1x1 conv -> LeakyReLU -> 1x1 conv."""
 
@@ -173,6 +184,24 @@ class SwinCritic(nn.Module):
                 break
         return feats
 
+    def forward_per_scale(self, x: torch.Tensor) -> torch.Tensor:
+        """(N, S) scores, one per scale (multiscale_patch); a hinge loss is then applied per scale."""
+        if self.head_type != "multiscale_patch":
+            return self(x)
+        if x.shape[-1] != self.input_size:
+            x = F.interpolate(x, size=(self.input_size, self.input_size), mode=self.upsample,
+                              align_corners=False)
+        maps = [head(f) for head, f in zip(self.patch_heads, self.stage_features(x))]
+        return torch.cat([m.mean(dim=(2, 3)) for m in maps], dim=1)
+
+    def heads(self) -> list[nn.Module]:
+        """Trainable head modules of the multiscale variants (target of head spectral norm)."""
+        if self.head_type == "multiscale":
+            return [self.ms_head]
+        if self.head_type == "multiscale_patch":
+            return list(self.patch_heads)
+        return []
+
     def score_maps(self, x: torch.Tensor) -> list[torch.Tensor]:
         """Per-scale (N, 1, h, w) score maps of the multiscale_patch head (for inspection and tests)."""
         return [head(f) for head, f in zip(self.patch_heads, self.stage_features(x))]
@@ -201,6 +230,9 @@ def build_swin_discriminator(cfg: dict) -> SwinCritic:
                         head_hidden=scfg.get("head_hidden", 256), patch_hidden=scfg.get("patch_hidden", 128))
     if head in ("multiscale", "multiscale_patch"):
         critic.freeze_backbone()
+        if scfg.get("head_sn"):
+            n_sn = apply_head_spectral_norm(critic)
+            log.info("Spectral normalization on %d head layers (Projected GAN style)", n_sn)
     else:
         critic.freeze_stages(scfg["trainable_stages"])
     if scfg.get("isn"):

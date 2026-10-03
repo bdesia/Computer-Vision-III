@@ -87,3 +87,9 @@ def test_probe_c_config_matches_probe_a_except_head_and_name():
     assert c["train"]["diffaug"]["policy"] == ["translation", "cutout", "d4"]
     assert c["train"]["select_seeds"] == [1000, 1001] and c["data"]["name"] == "microlib_000210"
     assert c["data"]["branch"] == "raw" and c["train"]["ema_decay"] is None
+
+
+def test_default_loss_is_wgan_gp_everywhere():
+    for n in ("m1_cnn", "m2_swin", "m3_swin_sam", "m2_swin_patchheads"):
+        c = load_config(CONFIGS / f"{n}.yaml")
+        assert c["train"]["loss"] == "wgan-gp" and c["model"]["swin"]["head_sn"] is False

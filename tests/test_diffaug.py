@@ -107,3 +107,27 @@ def test_linear_and_multiscale_heads_still_build_as_before():
     assert ms(_onehot(2)).shape == (2, 1)
     with pytest.raises(ValueError):
         SwinCritic(_swin_backbone(), 2, 64, head="patch")
+
+
+def test_forward_per_scale_matches_forward_and_head_sn_applies():
+    from src.models.discriminator_swin import apply_head_spectral_norm
+
+    critic = SwinCritic(_swin_backbone(), 2, 64, head="multiscale_patch", feature_stages=(2, 3, 4))
+    critic.freeze_backbone()
+    x = _onehot(3)
+    with torch.no_grad():
+        per_scale = critic.forward_per_scale(x)
+        assert per_scale.shape == (3, 3)
+        assert torch.allclose(per_scale.mean(dim=1, keepdim=True), critic(x), atol=1e-6)
+    assert apply_head_spectral_norm(critic) == 6                   # 2 convs x 3 scales
+    critic.train()
+    w = critic.patch_heads[0].conv1.weight                         # parametrized weight, sigma -> 1
+    for _ in range(30):
+        with torch.no_grad():
+            critic(x)
+    sigma = torch.linalg.matrix_norm(w.detach().flatten(1), ord=2)
+    assert abs(float(sigma) - 1.0) < 0.05
+    # pooled multiscale head: 2 linears; linear head: none
+    ms = SwinCritic(_swin_backbone(), 2, 64, head="multiscale")
+    assert apply_head_spectral_norm(ms) == 2
+    assert apply_head_spectral_norm(SwinCritic(_swin_backbone(), 2, 64)) == 0
