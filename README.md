@@ -357,12 +357,16 @@ ground-truth mask). "Worse" means the 95 % bootstrap interval of the difference 
 | M5 M1 + Swin fine-tune | 0.0097 | 0.0013 |
 | M1 extended | 0.0059 | 0.0020 |
 
-- **RQ1:** a Swin-T critic is not better than the CNN critic. It needs DiffAug to train at all, is
-  significantly worse on synthetic data and gives less isotropic volumes.
+- **RQ1:** a Swin-T critic is not better than the CNN critic. It needs DiffAug to train at all. On MicroLib its
+  two runs bracket the CNN's; its single synthetic run is significantly worse and less isotropic.
 - **RQ2:** zero-shot SAM segments this kind of high-contrast image worse than Otsu (it dilates every particle by
   about 1 px), and M3 inherits that bias.
-- **RQ3:** the CNN + frozen Swin-T ensemble (M4) matches SliceGAN, reproduces φ best and trains most
-  stably. Swin fine-tuning (M5) is not distinguishable from training the CNN for the same extra steps.
+- **RQ3:** the CNN + frozen Swin-T ensemble (M4) matches SliceGAN, with no measurable gain. Swin
+  fine-tuning (M5) is not distinguishable from training the CNN for the same extra steps, and a Swin branch
+  at 128 px (`configs/m4_ensemble_swin128.yaml`) did not help either.
+- **Repeat runs** (second training seed of M1, M2 and M4 on MicroLib, `configs/*_seed2.yaml`,
+  `reports/metrics_seeds_microlib.csv`): the same model trained twice differs as much as the models differ
+  from each other (M2: S₂ MAE 0.0077 vs 0.0017), so single-run rankings are not reliable.
 - No model is significantly better than M1. Random volumes with the correct φ score 0.042, so all
   models except M3 sit an order of magnitude below that floor.
 

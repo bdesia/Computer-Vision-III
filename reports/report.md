@@ -266,9 +266,9 @@ epoch, so on a different scale from the test columns).
 
 All errors are far below the random-volume floor (S₂ MAE 0.042, L MAE 0.077). The CNN-based models
 (M1, M1 + DiffAug, M4) form the best group: their point estimates are the lowest and their intervals
-overlap. M4, the CNN + frozen-Swin ensemble, reproduces the phase fraction exactly (0.232) and needed no
-checkpoint selection (its best epoch is its last). No model is significantly better than M1 with 128 test
-volumes; M3 is significantly worse, because its training image (the SAM map) has a lower phase fraction
+overlap. In this run M4, the CNN + frozen-Swin ensemble, reproduces the phase fraction exactly (0.232) and
+needed no checkpoint selection (its best epoch is its last); a second run (Section 5.7) does not repeat
+either property. No model is significantly better than M1 with 128 test volumes; M3 is significantly worse, because its training image (the SAM map) has a lower phase fraction
 and different morphology than the Otsu reference, and its last checkpoint undershoots φ further.
 
 ![Descriptor curves](figures/microlib_000210_descriptors.png)
@@ -380,8 +380,8 @@ favours boundaries but more diffusely, and its saliency shows the 4 × 4 patch g
 frozen Swin-T heads spread their attention over the whole slice: they respond to global texture and
 arrangement rather than to local edges, and separate real from generated slices least on their own. The
 two critics of M4 therefore use complementary cues (CNN: interfaces; frozen Swin: global texture), a
-plausible reason why the ensemble is the most stable model, while the frozen Swin alone cannot control the
-phase fraction (Section 5.2).
+plausible reason why the ensemble trains reliably, while the frozen Swin alone cannot control the phase
+fraction (Section 5.2).
 
 ### 5.6 Synthetic dataset: comparison against a true ground truth
 
@@ -404,35 +404,71 @@ map itself scores S₂ MAE 0.0021 against this mask.
 
 ![Synthetic qualitative comparison](figures/synthetic_qualitative.png)
 
-The synthetic results confirm the MicroLib conclusions and make two of them sharper:
+The synthetic results confirm the MicroLib conclusions (one training run per model; Section 5.7 shows how
+much a second run can differ):
 
 - **Swin as the only critic (RQ1).** M2 is significantly worse than M1 on S₂ and L, and also worse than the
   fair ablation M1 + DiffAug (S₂ difference +0.0048 [+0.0006, +0.0098], L +0.0161 [+0.0129, +0.0206]). Its
   volumes lose the disc/sphere morphology (elongated, merged inclusions in the qualitative panel). They are
   also **anisotropic**: xy slices match well (S₂ MAE 0.0054), xz and yz slices do not (0.0134 and 0.0101).
-  The same pattern appears on MicroLib (xy 0.0027 vs xz 0.0114 and yz 0.0098), while the CNN-based models are
-  isotropic on synthetic data. The Swin critic thus does not enforce consistency across the three slice
-  families as well as the CNN does.
+  The first MicroLib run of M2 shows the same pattern (xy 0.0027 vs xz 0.0114 and yz 0.0098), but its second
+  MicroLib run is isotropic (Section 5.7), so the anisotropy is a failure mode of some Swin-critic runs, not a
+  systematic property; the CNN-based models are isotropic in every run.
 - **SAM front-end (RQ2).** M3 reproduces its own training map faithfully (S₂ MAE 0.0029 vs the SAM map,
   φ 0.289 vs 0.290), so the GAN works; the error comes entirely from the front-end, whose one-pixel dilation
   (Section 5.4) the generator learns as a real feature. Against the true structure M3 is the worst model and
   significantly worse than M2, its Otsu-trained counterpart, on every metric.
 - **Swin as an additional critic (RQ3).** M4 is level with M1 on every metric, reproduces φ within 0.002, is
-  significantly better than M2 (S₂ −0.0054 [−0.0102, −0.0015], L −0.0163 [−0.0207, −0.0134]), and is the most
-  stable model during training: its selection-free median held-out S₂ MAE (0.0032, interquartile range
+  significantly better than M2 (S₂ −0.0054 [−0.0102, −0.0015], L −0.0163 [−0.0207, −0.0134]), and was the
+  most stable model during training in this run: its selection-free median held-out S₂ MAE (0.0032, interquartile range
   0.0023–0.0039) is the lowest of all seven, less than half of M1's (0.0084). As a fine-tuning stage, M5 gives
   the lowest test S₂ MAE (0.0013, below the Otsu segmentation's own 0.0021, because the generator smooths out
   the segmentation noise), but it is not distinguishable from M1-extended.
 
+### 5.7 Repeat runs and a Swin critic at 128 px (MicroLib)
+
+Two follow-up experiments test how robust the conclusions are. First, M1, M2 and M4 were trained a second
+time with a different training seed (43 instead of 42) and otherwise identical configuration; the
+validation and test seeds are the same as before. Second, M4 was trained with its Swin branch at 128 px:
+slices are upsampled from 64 to 128 px before the frozen Swin-T, so its attention windows stay 7 × 7 in the
+first stages, motivated by the linear probe (73 % at 64 px vs 83 % at 128 px). This run needed one generator
+backward pass per slice orientation instead of one for all three (the same gradient, a third of the critic
+activations in memory); otherwise it ran out of GPU memory. Values: `reports/metrics_seeds_microlib.csv`.
+
+| Model | Run | Checkpoint | φ | \|Δφ\| | S₂ MAE | L MAE | Typical S₂ | S₂ MAE xy / xz / yz |
+|-------|-----|------------|---|--------|--------|-------|------------|---------------------|
+| M1 CNN | 1 | last | 0.235 | 0.003 [0.000, 0.012] | 0.0029 [0.0008, 0.0088] | 0.0011 [0.0003, 0.0059] | 0.0051 | 0.0047 / 0.0008 / 0.0040 |
+| M1 CNN | 2 | snapshot ep. 35 | 0.220 | 0.012 [0.003, 0.020] | 0.0055 [0.0012, 0.0112] | 0.0045 [0.0015, 0.0093] | 0.0127 | 0.0074 / 0.0048 / 0.0042 |
+| M2 Swin + DiffAug | 1 | best | 0.239 | 0.007 [0.000, 0.017] | 0.0077 [0.0019, 0.0140] | 0.0055 [0.0009, 0.0108] | 0.0132 | 0.0027 / 0.0114 / 0.0098 |
+| M2 Swin + DiffAug | 2 | last | 0.229 | 0.003 [0.000, 0.012] | 0.0017 [0.0007, 0.0072] | 0.0010 [0.0004, 0.0060] | 0.0067 | 0.0051 / 0.0043 / 0.0049 |
+| M4 CNN + frozen Swin | 1 | best (= last) | 0.232 | 0.000 [0.000, 0.009] | 0.0014 [0.0006, 0.0068] | 0.0015 [0.0006, 0.0059] | 0.0096 | 0.0019 / 0.0075 / 0.0014 |
+| M4 CNN + frozen Swin | 2 | snapshot ep. 35 | 0.222 | 0.010 [0.002, 0.018] | 0.0044 [0.0015, 0.0096] | 0.0043 [0.0012, 0.0087] | 0.0104 | 0.0065 / 0.0027 / 0.0060 |
+| M4, Swin at 128 px | 1 | snapshot ep. 40 | 0.240 | 0.008 [0.000, 0.016] | 0.0042 [0.0013, 0.0100] | 0.0022 [0.0007, 0.0070] | 0.0084 | 0.0065 / 0.0014 / 0.0056 |
+
+- **Run-to-run variability is as large as the differences between models.** For each model the two runs
+  are not significantly different, but their point estimates differ by factors of 2–4 (M2: S₂ MAE 0.0077 vs
+  0.0017). The ranking of M1, M2 and M4 changes between the first and the second set of runs, and within
+  the second set no pair is significantly different. On MicroLib, the three critics therefore reach the same
+  quality; a ranking from a single run per model would not be reliable.
+- **Properties that did not repeat.** M4's exact φ and "best epoch = last", and M2's anisotropy, were
+  features of single runs. M4's selection-free typical score is the most reproducible between runs
+  (0.0096 and 0.0104, vs 0.0051 and 0.0127 for M1), which is weak evidence for a more predictable
+  training, not for a better one.
+- **Swin at 128 px.** No clear difference from M4 at 64 px (S₂ difference +0.0018 [−0.0037, +0.0086]), M1 or
+  M2. Its selected checkpoint scored 0.0010 on the validation seeds but 0.0042 on the test seeds, and its
+  late epochs oscillate (last epoch 0.027). The better real-vs-generated separation of the frozen features
+  at 128 px did not translate into better volumes, so the synthetic repeat of this variant was not run.
+
 ## 6. Conclusions and future work
 
-**Answers to the research questions** (two datasets, 128 test volumes per model, bootstrap intervals):
+**Answers to the research questions** (two datasets, 128 test volumes per model, bootstrap intervals; two
+training runs of M1, M2 and M4 on MicroLib):
 
 - **RQ1 — Swin-T instead of the CNN critic: no.** Trained in SliceGAN's WGAN-GP setup, a Swin-T critic was
-  unstable in every configuration until DiffAug was added. With DiffAug it reaches M1-level epochs, but the
-  selected models are never better than the CNN baseline: no clear difference on MicroLib, significantly worse
-  S₂ and L on the synthetic data (also against the M1 + DiffAug ablation), with less isotropic volumes in
-  both datasets. Standard ViT-GAN stabilizers (lower learning rate, improved spectral norm, Adam β₁ = 0,
+  unstable in every configuration until DiffAug was added. With DiffAug it reaches the CNN's quality but not
+  more: on MicroLib its two runs bracket the CNN's (no significant difference in either), and the single
+  synthetic run is significantly worse on S₂ and L (also against the M1 + DiffAug ablation) and less isotropic.
+  Standard ViT-GAN stabilizers (lower learning rate, improved spectral norm, Adam β₁ = 0,
   generator EMA, a smaller trainable part) did not remove the instability; a frozen Swin critic cannot be
   trained with WGAN-GP at all (the gradient penalty dominates) and, with a hinge loss, does not control φ.
 - **RQ2 — SAM instead of a global threshold: no, for this kind of image.** On high-contrast two-phase
@@ -440,23 +476,27 @@ The synthetic results confirm the MicroLib conclusions and make two of them shar
   one-pixel dilation, φ +16 %). The GAN reproduces SAM's map faithfully, so M3 inherits this bias and is
   significantly worse than M2 on both datasets. The front-end shifts the GAN's target more than any change
   of critic does: segmentation quality matters more than the critic architecture.
-- **RQ3 — Swin-T as an additional critic: it matches the baseline and makes training more stable.** The CNN +
-  frozen-Swin ensemble (M4, Vision-aided GAN style) is statistically level with SliceGAN on both datasets,
-  reproduces φ best (exactly on MicroLib, within 0.002 on synthetic), is significantly better than the
-  Swin-only critic on synthetic data and has the most stable training (best epoch = last on MicroLib, lowest
-  and tightest selection-free scores on synthetic). Saliency maps explain why the two critics combine well:
-  the CNN judges interfaces, the frozen Swin global texture. Used as a fine-tuning stage of a converged
+- **RQ3 — Swin-T as an additional critic: it matches the baseline, with no measurable gain.** The CNN +
+  frozen-Swin ensemble (M4, Vision-aided GAN style) is statistically level with SliceGAN in all three
+  comparisons (two MicroLib runs, one synthetic), is significantly better than the Swin-only critic on
+  synthetic data, and its training quality is the most reproducible between runs. Its first run looked
+  better (exact φ, best epoch = last, lowest typical score on synthetic), but the second MicroLib run did not
+  repeat that. Saliency maps show that the two critics use complementary cues: the CNN judges interfaces,
+  the frozen Swin global texture. Moving the Swin branch to 128 px did not help. Used as a fine-tuning stage of a converged
   SliceGAN (M5), the Swin critic gives no gain over training the CNN alone for the same extra steps.
 
-**Overall.** SliceGAN's small CNN critic is hard to beat on two-phase 64³ microstructures. Vision Transformers
-help where they add information without replacing that critic: a frozen pretrained Swin-T next to the CNN
-gives the most stable and best-calibrated model, at the cost of a 0.18 M-parameter head. A second lesson is
-methodological: single 64³ volumes are noisy samples (φ ±0.05), and model rankings obtained with a few
-seeds reversed when re-evaluated. Separate selection, validation and test seeds and bootstrap intervals
-were needed to reach conclusions that hold.
+**Overall.** SliceGAN's small CNN critic is hard to beat on two-phase 64³ microstructures. A Swin-T critic,
+alone (with DiffAug) or next to the CNN, reaches the same quality but not better; used alone it is harder to
+train and sometimes produces anisotropic volumes, while next to the CNN (a 0.18 M-parameter head on a frozen
+backbone) it trains as reliably as the baseline. The second lesson is methodological and probably the most
+transferable: single 64³ volumes are noisy samples (φ ±0.05), the same model trained twice can differ by a
+factor of 2–4, and model rankings obtained with a few seeds or a single run reversed when re-evaluated.
+Separate selection, validation and test seeds, bootstrap intervals and repeat runs were needed to reach
+conclusions that hold.
 
-**Limitations.** One training run per model and dataset (GAN training is not deterministic on GPU, and the
-v2 rerun showed run-to-run variability); 64 px slices, which force Swin-T's windows down to 4 × 4 and 2 × 2
+**Limitations.** Two training runs for M1, M2 and M4 on MicroLib and one for every other model and for the
+synthetic dataset, while Section 5.7 shows that run-to-run variability is as large as the differences between
+models; 64 px slices, which force Swin-T's windows down to 4 × 4 and 2 × 2
 and use the backbone far from its 224 px pretraining resolution; one real micrograph, high contrast and
 two phases, where a global threshold is already near-optimal.
 
@@ -464,8 +504,8 @@ SliceGAN is the 2021 literature baseline; 2024 works (Micro3Diff, DDPM-GAN) impr
 stability with diffusion models, but are outside the scope of a Vision Transformer course project. The
 contribution here is a controlled evaluation of Swin critics and of SAM as a phase front-end.
 
-**Future work.** Swin critics on 128 px inputs (the linear probe gains about 10 points at 128 px);
-second training seeds for every model; harder micrographs (low contrast, texture, three phases) where SAM's
+**Future work.** Five or more training runs per model, which the run-to-run spread requires before any
+ranking; harder micrographs (low contrast, texture, three phases) where SAM's
 object-level segmentation can pay off, possibly with point prompts or a fine-tuned mask decoder;
 anisotropic materials (three-view SliceGAN, which would also preserve the banding seen in Section 5.4);
 homogenization of the exported periodic RVEs (FEM/FFT/FNO) with an RVE-size convergence study; and

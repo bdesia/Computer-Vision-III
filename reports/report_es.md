@@ -287,8 +287,9 @@ prueba).
 
 Todos los errores están muy por debajo del piso de volúmenes aleatorios (S₂ MAE 0,042, L MAE 0,077). Los
 modelos basados en CNN (M1, M1 + DiffAug, M4) forman el mejor grupo: sus estimaciones puntuales son las más
-bajas y sus intervalos se superponen. M4, el ensamble CNN + Swin congelado, reproduce exactamente la
-fracción de fase (0,232) y no necesitó selección de checkpoint (su mejor época es la última). Ningún modelo
+bajas y sus intervalos se superponen. En esta corrida M4, el ensamble CNN + Swin congelado, reproduce
+exactamente la fracción de fase (0,232) y no necesitó selección de checkpoint (su mejor época es la última);
+una segunda corrida (Sección 5.7) no repite ninguna de las dos propiedades. Ningún modelo
 es significativamente mejor que M1 con 128 volúmenes de prueba; M3 es significativamente peor, porque su
 imagen de entrenamiento (el mapa de SAM) tiene menor fracción de fase y distinta morfología que la
 referencia de Otsu, y su último checkpoint subestima φ aún más.
@@ -416,7 +417,7 @@ también favorece los bordes, pero de forma más difusa, y su saliencia muestra 
 responden a la textura y la disposición global más que a los bordes locales, y son las que peor separan,
 por sí solas, rebanadas reales de generadas. Los dos críticos de M4 usan, por lo tanto, señales
 complementarias (CNN: interfaces; Swin congelado: textura global), una razón plausible de que el ensamble
-sea el modelo más estable, mientras que el Swin congelado solo no puede controlar la fracción de fase
+entrene de forma confiable, mientras que el Swin congelado solo no puede controlar la fracción de fase
 (Sección 5.2).
 
 ### 5.6 Dataset sintético: comparación contra una referencia exacta
@@ -440,15 +441,17 @@ escala, el propio mapa de Otsu obtiene S₂ MAE 0,0021 frente a esta máscara.
 
 ![Comparación cualitativa, dataset sintético](figures/synthetic_qualitative.png)
 
-Los resultados sintéticos confirman las conclusiones de MicroLib y vuelven más nítidas dos de ellas:
+Los resultados sintéticos confirman las conclusiones de MicroLib (una corrida de entrenamiento por modelo; la
+Sección 5.7 muestra cuánto puede diferir una segunda corrida):
 
 - **Swin como único crítico (PI1).** M2 es significativamente peor que M1 en S₂ y L, y también peor que la
   ablación justa M1 + DiffAug (diferencia en S₂ +0,0048 [+0,0006, +0,0098], en L +0,0161 [+0,0129, +0,0206]).
   Sus volúmenes pierden la morfología de discos/esferas (inclusiones alargadas y fusionadas en el panel
   cualitativo). Además son **anisótropos**: las rebanadas xy coinciden bien (S₂ MAE 0,0054), las xz e yz no
-  (0,0134 y 0,0101). El mismo patrón aparece en MicroLib (xy 0,0027 frente a xz 0,0114 e yz 0,0098), mientras
-  que los modelos basados en CNN son isótropos en los datos sintéticos. El crítico Swin, por lo tanto, no
-  impone la consistencia entre las tres familias de rebanadas tan bien como la CNN.
+  (0,0134 y 0,0101). La primera corrida de M2 en MicroLib muestra el mismo patrón (xy 0,0027 frente a xz 0,0114
+  e yz 0,0098), pero su segunda corrida en MicroLib es isótropa (Sección 5.7), de modo que la anisotropía es un
+  modo de falla de algunas corridas con crítico Swin, no una propiedad sistemática; los modelos basados en CNN
+  son isótropos en todas las corridas.
 - **Segmentación con SAM (PI2).** M3 reproduce fielmente su propio mapa de entrenamiento (S₂ MAE 0,0029
   frente al mapa de SAM, φ 0,289 frente a 0,290), así que la GAN funciona; el error proviene por completo de
   la etapa de segmentación, cuya dilatación de un píxel (Sección 5.4) el generador aprende como un rasgo real.
@@ -456,22 +459,59 @@ Los resultados sintéticos confirman las conclusiones de MicroLib y vuelven más
   entrenado con Otsu, en todas las métricas.
 - **Swin como crítico adicional (PI3).** M4 está a la par de M1 en todas las métricas, reproduce φ con un
   error de 0,002, es significativamente mejor que M2 (S₂ −0,0054 [−0,0102, −0,0015], L −0,0163 [−0,0207,
-  −0,0134]) y es el modelo más estable durante el entrenamiento: su mediana sin selección del S₂ MAE reservado
+  −0,0134]) y fue el modelo más estable durante el entrenamiento en esta corrida: su mediana sin selección del S₂ MAE reservado
   (0,0032, rango intercuartílico 0,0023–0,0039) es la más baja de los siete, menos de la mitad de la de M1
   (0,0084). Como etapa de ajuste fino, M5 da el menor S₂ MAE de prueba (0,0013, por debajo del 0,0021 de la
   propia segmentación de Otsu, porque el generador suaviza el ruido de la segmentación), pero no se distingue
   de M1 extendido.
 
+### 5.7 Corridas repetidas y un crítico Swin a 128 px (MicroLib)
+
+Dos experimentos adicionales ponen a prueba la robustez de las conclusiones. Primero, M1, M2 y M4 se
+entrenaron una segunda vez con otra semilla de entrenamiento (43 en lugar de 42) y la misma configuración;
+las semillas de validación y de prueba son las mismas que antes. Segundo, M4 se entrenó con su rama Swin a
+128 px: las rebanadas se sobremuestrean de 64 a 128 px antes del Swin-T congelado, de modo que sus ventanas
+de atención se mantienen en 7 × 7 en las primeras etapas, motivado por la sonda lineal (73 % a 64 px frente a
+83 % a 128 px). Esta corrida necesitó una pasada hacia atrás del generador por cada orientación de corte en
+lugar de una para las tres (el mismo gradiente, un tercio de las activaciones del crítico en memoria); de lo
+contrario se quedaba sin memoria de GPU. Valores: `reports/metrics_seeds_microlib.csv`.
+
+| Modelo | Corrida | Checkpoint | φ | \|Δφ\| | S₂ MAE | L MAE | S₂ típico | S₂ MAE xy / xz / yz |
+|--------|---------|------------|---|--------|--------|-------|-----------|---------------------|
+| M1 CNN | 1 | última | 0,235 | 0,003 [0,000, 0,012] | 0,0029 [0,0008, 0,0088] | 0,0011 [0,0003, 0,0059] | 0,0051 | 0,0047 / 0,0008 / 0,0040 |
+| M1 CNN | 2 | instantánea ép. 35 | 0,220 | 0,012 [0,003, 0,020] | 0,0055 [0,0012, 0,0112] | 0,0045 [0,0015, 0,0093] | 0,0127 | 0,0074 / 0,0048 / 0,0042 |
+| M2 Swin + DiffAug | 1 | mejor | 0,239 | 0,007 [0,000, 0,017] | 0,0077 [0,0019, 0,0140] | 0,0055 [0,0009, 0,0108] | 0,0132 | 0,0027 / 0,0114 / 0,0098 |
+| M2 Swin + DiffAug | 2 | última | 0,229 | 0,003 [0,000, 0,012] | 0,0017 [0,0007, 0,0072] | 0,0010 [0,0004, 0,0060] | 0,0067 | 0,0051 / 0,0043 / 0,0049 |
+| M4 CNN + Swin congelado | 1 | mejor (= última) | 0,232 | 0,000 [0,000, 0,009] | 0,0014 [0,0006, 0,0068] | 0,0015 [0,0006, 0,0059] | 0,0096 | 0,0019 / 0,0075 / 0,0014 |
+| M4 CNN + Swin congelado | 2 | instantánea ép. 35 | 0,222 | 0,010 [0,002, 0,018] | 0,0044 [0,0015, 0,0096] | 0,0043 [0,0012, 0,0087] | 0,0104 | 0,0065 / 0,0027 / 0,0060 |
+| M4, Swin a 128 px | 1 | instantánea ép. 40 | 0,240 | 0,008 [0,000, 0,016] | 0,0042 [0,0013, 0,0100] | 0,0022 [0,0007, 0,0070] | 0,0084 | 0,0065 / 0,0014 / 0,0056 |
+
+- **La variabilidad entre corridas es tan grande como las diferencias entre modelos.** Para cada modelo, las
+  dos corridas no son significativamente distintas, pero sus estimaciones puntuales difieren en factores de
+  2 a 4 (M2: S₂ MAE 0,0077 frente a 0,0017). El orden de M1, M2 y M4 cambia entre el primer y el segundo
+  conjunto de corridas, y dentro del segundo conjunto ningún par es significativamente distinto. En MicroLib,
+  por lo tanto, los tres críticos alcanzan la misma calidad; un ranking basado en una sola corrida por modelo
+  no sería confiable.
+- **Propiedades que no se repitieron.** La φ exacta de M4 y su "mejor época = última", y la anisotropía de
+  M2, fueron rasgos de corridas individuales. La puntuación típica sin selección de M4 es la más reproducible
+  entre corridas (0,0096 y 0,0104, frente a 0,0051 y 0,0127 de M1), lo que es evidencia débil de un
+  entrenamiento más predecible, no de uno mejor.
+- **Swin a 128 px.** Sin diferencia clara respecto de M4 a 64 px (diferencia en S₂ +0,0018 [−0,0037,
+  +0,0086]), M1 o M2. Su checkpoint seleccionado obtuvo 0,0010 en las semillas de validación pero 0,0042 en
+  las de prueba, y sus últimas épocas oscilan (última época 0,027). La mejor separación real-vs-generado de
+  las características congeladas a 128 px no se tradujo en mejores volúmenes, por lo que no se corrió la
+  repetición de esta variante en el dataset sintético.
+
 ## 6. Conclusiones y trabajo futuro
 
 **Respuestas a las preguntas de investigación** (dos datasets, 128 volúmenes de prueba por modelo,
-intervalos bootstrap):
+intervalos bootstrap; dos corridas de entrenamiento de M1, M2 y M4 en MicroLib):
 
 - **PI1 — Swin-T en lugar del crítico CNN: no.** Entrenado con la configuración WGAN-GP de SliceGAN, un
   crítico Swin-T fue inestable en todas las configuraciones hasta que se agregó DiffAug. Con DiffAug alcanza
-  épocas al nivel de M1, pero los modelos seleccionados nunca superan a la línea base CNN: sin diferencia
-  clara en MicroLib y S₂ y L significativamente peores en los datos sintéticos (también frente a la ablación
-  M1 + DiffAug), con volúmenes menos isótropos en ambos datasets. Los estabilizadores habituales de ViT-GAN
+  la calidad de la CNN, pero no más: en MicroLib sus dos corridas encierran a las de la CNN (sin diferencia
+  significativa en ninguna), y la única corrida sintética es significativamente peor en S₂ y L (también
+  frente a la ablación M1 + DiffAug) y menos isótropa. Los estabilizadores habituales de ViT-GAN
   (menor tasa de aprendizaje, spectral norm mejorada, Adam β₁ = 0, EMA del generador, menor parte entrenable)
   no eliminaron la inestabilidad; un crítico Swin congelado directamente no puede entrenarse con WGAN-GP (la
   penalización de gradiente domina) y, con pérdida hinge, no controla φ.
@@ -481,25 +521,29 @@ intervalos bootstrap):
   ese sesgo y es significativamente peor que M2 en ambos datasets. La etapa de segmentación desplaza el
   objetivo de la GAN más que cualquier cambio de crítico: la calidad de la segmentación importa más que la
   arquitectura del crítico.
-- **PI3 — Swin-T como crítico adicional: iguala a la línea base y vuelve el entrenamiento más estable.** El
-  ensamble CNN + Swin congelado (M4, al estilo Vision-aided GAN) está estadísticamente a la par de SliceGAN en
-  ambos datasets, es el que mejor reproduce φ (exacta en MicroLib, con error de 0,002 en el sintético), es
-  significativamente mejor que el crítico solo-Swin en los datos sintéticos y tiene el entrenamiento más
-  estable (mejor época = última en MicroLib, puntuaciones sin selección más bajas y concentradas en el
-  sintético). Los mapas de saliencia explican por qué ambos críticos se combinan bien: la CNN juzga
-  interfaces y el Swin congelado, la textura global. Usado como etapa de ajuste fino de un SliceGAN ya
+- **PI3 — Swin-T como crítico adicional: iguala a la línea base, sin una mejora medible.** El ensamble CNN +
+  Swin congelado (M4, al estilo Vision-aided GAN) está estadísticamente a la par de SliceGAN en las tres
+  comparaciones (dos corridas en MicroLib, una en el sintético), es significativamente mejor que el crítico
+  solo-Swin en los datos sintéticos, y la calidad de su entrenamiento es la más reproducible entre corridas.
+  Su primera corrida parecía mejor (φ exacta, mejor época = última, menor puntuación típica en el
+  sintético), pero la segunda corrida en MicroLib no lo repitió. Los mapas de saliencia muestran que ambos
+  críticos usan señales complementarias: la CNN juzga interfaces y el Swin congelado, la textura global.
+  Llevar la rama Swin a 128 px no ayudó. Usado como etapa de ajuste fino de un SliceGAN ya
   convergido (M5), el crítico Swin no mejora respecto de entrenar solo la CNN los mismos pasos adicionales.
 
 **En conjunto.** El pequeño crítico CNN de SliceGAN es difícil de superar en microestructuras de dos fases de
-64³. Los Vision Transformers ayudan cuando aportan información sin reemplazar a ese crítico: un Swin-T
-preentrenado y congelado junto a la CNN da el modelo más estable y mejor calibrado, al costo de una cabeza
-de 0,18 M de parámetros. Una segunda lección es metodológica: un volumen de 64³ es una muestra ruidosa
-(φ ±0,05), y los rankings de modelos obtenidos con pocas semillas se invirtieron al reevaluar. Hicieron falta
-semillas separadas de selección, validación y prueba, e intervalos bootstrap, para llegar a conclusiones
-que se sostienen.
+64³. Un crítico Swin-T, solo (con DiffAug) o junto a la CNN, alcanza la misma calidad pero no una mejor; solo
+es más difícil de entrenar y a veces produce volúmenes anisótropos, mientras que junto a la CNN (una cabeza de
+0,18 M de parámetros sobre un backbone congelado) entrena de forma tan confiable como la línea base. La
+segunda lección es metodológica y probablemente la más transferible: un volumen de 64³ es una muestra ruidosa
+(φ ±0,05), el mismo modelo entrenado dos veces puede diferir en un factor de 2 a 4, y los rankings de modelos
+obtenidos con pocas semillas o una sola corrida se invirtieron al reevaluar. Hicieron falta semillas separadas
+de selección, validación y prueba, intervalos bootstrap y corridas repetidas para llegar a conclusiones que se
+sostienen.
 
-**Limitaciones.** Una sola corrida de entrenamiento por modelo y dataset (el entrenamiento de GANs no es
-determinista en GPU, y la repetición de v2 mostró variabilidad entre corridas); rebanadas de 64 px, que
+**Limitaciones.** Dos corridas de entrenamiento para M1, M2 y M4 en MicroLib y una para el resto de los
+modelos y para el dataset sintético, cuando la Sección 5.7 muestra que la variabilidad entre corridas es tan
+grande como las diferencias entre modelos; rebanadas de 64 px, que
 obligan a reducir las ventanas de Swin-T a 4 × 4 y 2 × 2 y usan el backbone lejos de su resolución de
 preentrenamiento de 224 px; una sola micrografía real, de alto contraste y dos fases, donde un umbral global
 ya es casi óptimo.
@@ -509,8 +553,8 @@ descriptores y estabilidad con modelos de difusión, pero están fuera del alcan
 de Vision Transformers. La contribución aquí es una evaluación controlada de críticos Swin y de SAM como
 etapa de segmentación.
 
-**Trabajo futuro.** Críticos Swin con entradas de 128 px (la sonda lineal gana unos 10 puntos a 128 px);
-segundas semillas de entrenamiento para cada modelo; micrografías más difíciles (bajo contraste, texturas,
+**Trabajo futuro.** Cinco o más corridas de entrenamiento por modelo, que la dispersión entre corridas exige
+antes de cualquier ranking; micrografías más difíciles (bajo contraste, texturas,
 tres fases), donde la segmentación por objetos de SAM puede rendir, posiblemente con prompts de puntos o un
 decodificador de máscaras ajustado; materiales anisótropos (SliceGAN con tres vistas, que además preservaría
 el bandeado visto en la Sección 5.4); homogeneización de los RVE periódicos exportados (FEM/FFT/FNO) con un
