@@ -1,0 +1,19 @@
+dataset,reference,model,baseline,metric,model_value,baseline_value,diff,diff_lo,diff_hi,verdict
+synthetic,common,m1_cnn_diffaug,m1_cnn,abs_dphi,0.0101603,0.0101313,3.618e-05,-0.00916898,0.00951007,no clear difference
+synthetic,common,m1_cnn_diffaug,m1_cnn,s2_mae,0.00460595,0.00408245,0.000584331,-0.00396659,0.00466397,no clear difference
+synthetic,common,m1_cnn_diffaug,m1_cnn,L_mae,0.00562406,0.00524416,0.000372099,-0.00152091,0.00219666,no clear difference
+synthetic,common,m1_extended,m1_cnn,abs_dphi,0.00257477,0.0101313,-0.00723059,-0.0145902,0.00105511,no clear difference
+synthetic,common,m1_extended,m1_cnn,s2_mae,0.00232124,0.00408245,-0.00159053,-0.00554641,0.000916666,no clear difference
+synthetic,common,m1_extended,m1_cnn,L_mae,0.00564042,0.00524416,0.000424889,-0.00105833,0.00171143,no clear difference
+synthetic,common,m2_swin,m1_cnn,abs_dphi,0.00412124,0.0101313,-0.00543286,-0.0139813,0.00497134,no clear difference
+synthetic,common,m2_swin,m1_cnn,s2_mae,0.00940459,0.00408245,0.0053815,0.000977484,0.0105126,worse
+synthetic,common,m2_swin,m1_cnn,L_mae,0.0217294,0.00524416,0.0164056,0.0135325,0.0209071,worse
+synthetic,common,m3_swin_sam,m1_cnn,abs_dphi,0.0384229,0.0101313,0.0283471,0.0190635,0.0379821,worse
+synthetic,common,m3_swin_sam,m1_cnn,s2_mae,0.0297471,0.00408245,0.025492,0.0197809,0.0304733,worse
+synthetic,common,m3_swin_sam,m1_cnn,L_mae,0.0316275,0.00524416,0.0263866,0.0227262,0.0297845,worse
+synthetic,common,m4_ensemble,m1_cnn,abs_dphi,0.00255127,0.0101313,-0.00722319,-0.0145179,0.00133119,no clear difference
+synthetic,common,m4_ensemble,m1_cnn,s2_mae,0.00390668,0.00408245,-7.29112e-05,-0.00420567,0.00373867,no clear difference
+synthetic,common,m4_ensemble,m1_cnn,L_mae,0.00521292,0.00524416,4.70572e-06,-0.0014537,0.00160072,no clear difference
+synthetic,common,m5_finetune,m1_cnn,abs_dphi,0.00258411,0.0101313,-0.00711383,-0.0147604,0.00183547,no clear difference
+synthetic,common,m5_finetune,m1_cnn,s2_mae,0.00167989,0.00408245,-0.00215503,-0.0063672,0.00161421,no clear difference
+synthetic,common,m5_finetune,m1_cnn,L_mae,0.00534384,0.00524416,9.9793e-05,-0.00134157,0.00138677,no clear difference

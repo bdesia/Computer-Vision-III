@@ -2,8 +2,6 @@
 
 Vision Transformers — FIUBA. Individual work.
 
-> Draft. Values marked **TBD** are filled in from the final runs (`reports/metrics.csv`).
-
 ## 1. Project goal
 
 Three-dimensional microstructures are needed to compute effective material properties (for example as
@@ -326,7 +324,10 @@ test volumes M1-extended reaches S₂ MAE 0.0059 and M5 0.0097 (M1: 0.0029), and
 held-out scores were reached in the first epoch, i.e. at the starting point. Once SliceGAN has converged,
 adding the Swin critic as a fine-tuning stage (the Vision-aided GAN recipe) does not help here.
 An earlier version of this comparison (run v5, selection on 2 seeds) suggested the opposite; that result
-was selection noise and disappeared on more seeds (Section 3).
+was selection noise and disappeared on more seeds (Section 3). On the synthetic dataset (Section 5.6) both
+runs improve on M1 and M5 has the lowest S₂ MAE of all models (0.0013 vs 0.0020 for M1-extended), but the
+difference between them is not significant (95 % interval of M5 − M1-extended: −0.0028 to +0.0023): the gain
+comes from the extra training, not from the Swin critic.
 
 ![M5 vs M1 extended (run v5 selection traces)](figures/m5_vs_m1_extended.png)
 
@@ -382,41 +383,110 @@ two critics of M4 therefore use complementary cues (CNN: interfaces; frozen Swin
 plausible reason why the ensemble is the most stable model, while the frozen Swin alone cannot control the
 phase fraction (Section 5.2).
 
+### 5.6 Synthetic dataset: comparison against a true ground truth
+
+All seven models were retrained on the synthetic micrograph with the same configurations and protocol.
+Here the common reference is the exact ground-truth mask (φ = 0.250), so the scores measure how close each
+model gets to the *true* structure, including the error of its segmentation front-end. For scale, the Otsu
+map itself scores S₂ MAE 0.0021 against this mask.
+
+| Model | Checkpoint | φ | \|Δφ\| | S₂ MAE | L MAE | Typical S₂ | vs M1 |
+|-------|------------|---|--------|--------|-------|------------|-------|
+| M1 CNN (SliceGAN) | snapshot ep. 30 | 0.240 | 0.010 [0.003, 0.017] | 0.0040 [0.0023, 0.0080] | 0.0052 [0.0042, 0.0066] | 0.0084 | — |
+| M1 + DiffAug | snapshot ep. 20 | 0.240 | 0.010 [0.004, 0.017] | 0.0045 [0.0028, 0.0080] | 0.0056 [0.0043, 0.0072] | 0.0074 | no clear difference |
+| M2 Swin + DiffAug | best (ep. 29) | 0.246 | 0.004 [0.000, 0.013] | 0.0093 [0.0075, 0.0140] | 0.0216 [0.0189, 0.0260] | 0.0150 | **worse** (S₂, L) |
+| M3 Swin + DiffAug, SAM map | best (ep. 15) | 0.289 | 0.039 [0.032, 0.045] | 0.0298 [0.0252, 0.0344] | 0.0317 [0.0282, 0.0350] | 0.0106 | **worse** (all metrics) |
+| M4 CNN + frozen Swin | snapshot ep. 35 | 0.253 | 0.002 [0.000, 0.008] | 0.0039 [0.0026, 0.0075] | 0.0052 [0.0046, 0.0067] | **0.0032** | no clear difference |
+| M5 M1 + Swin fine-tune | best (ep. 8 of 20) | 0.248 | 0.002 [0.000, 0.008] | **0.0013** [0.0008, 0.0046] | 0.0053 [0.0049, 0.0061] | 0.0050 | no clear difference |
+| M1 extended | best (ep. 8 of 20) | 0.249 | 0.002 [0.000, 0.008] | 0.0020 [0.0018, 0.0045] | 0.0056 [0.0051, 0.0065] | 0.0050 | no clear difference |
+
+![Synthetic descriptor curves](figures/synthetic_descriptors.png)
+
+![Synthetic qualitative comparison](figures/synthetic_qualitative.png)
+
+The synthetic results confirm the MicroLib conclusions and make two of them sharper:
+
+- **Swin as the only critic (RQ1).** M2 is significantly worse than M1 on S₂ and L, and also worse than the
+  fair ablation M1 + DiffAug (S₂ difference +0.0048 [+0.0006, +0.0098], L +0.0161 [+0.0129, +0.0206]). Its
+  volumes lose the disc/sphere morphology (elongated, merged inclusions in the qualitative panel). They are
+  also **anisotropic**: xy slices match well (S₂ MAE 0.0054), xz and yz slices do not (0.0134 and 0.0101).
+  The same pattern appears on MicroLib (xy 0.0027 vs xz 0.0114 and yz 0.0098), while the CNN-based models are
+  isotropic on synthetic data. The Swin critic thus does not enforce consistency across the three slice
+  families as well as the CNN does.
+- **SAM front-end (RQ2).** M3 reproduces its own training map faithfully (S₂ MAE 0.0029 vs the SAM map,
+  φ 0.289 vs 0.290), so the GAN works; the error comes entirely from the front-end, whose one-pixel dilation
+  (Section 5.4) the generator learns as a real feature. Against the true structure M3 is the worst model and
+  significantly worse than M2, its Otsu-trained counterpart, on every metric.
+- **Swin as an additional critic (RQ3).** M4 is level with M1 on every metric, reproduces φ within 0.002, is
+  significantly better than M2 (S₂ −0.0054 [−0.0102, −0.0015], L −0.0163 [−0.0207, −0.0134]), and is the most
+  stable model during training: its selection-free median held-out S₂ MAE (0.0032, interquartile range
+  0.0023–0.0039) is the lowest of all seven, less than half of M1's (0.0084). As a fine-tuning stage, M5 gives
+  the lowest test S₂ MAE (0.0013, below the Otsu segmentation's own 0.0021, because the generator smooths out
+  the segmentation noise), but it is not distinguishable from M1-extended.
+
 ## 6. Conclusions and future work
 
-**TBD** after the final runs. Points already supported by the experiments:
+**Answers to the research questions** (two datasets, 128 test volumes per model, bootstrap intervals):
 
-- SliceGAN with its CNN critic is stable and matches the 2D statistics of the micrograph closely
-  (best held-out S₂ MAE 0.002–0.004, an order of magnitude below the random-volume floor of 0.042).
-- A Swin-T critic trained in SliceGAN's WGAN-GP setup is unstable and seed-dependent; standard and
-  ViT-specific stabilizers (lower learning rate, improved spectral norm, Adam β₁ = 0, generator EMA,
-  smaller trainable part) did not remove the oscillation. With checkpoint selection, M1-level epochs can
-  still be recovered.
-- For this two-phase, high-contrast micrograph, a global threshold is a better segmentation than
-  zero-shot SAM; SAM's value lies in harder images (low contrast, texture, multiple phases).
+- **RQ1 — Swin-T instead of the CNN critic: no.** Trained in SliceGAN's WGAN-GP setup, a Swin-T critic was
+  unstable in every configuration until DiffAug was added. With DiffAug it reaches M1-level epochs, but the
+  selected models are never better than the CNN baseline: no clear difference on MicroLib, significantly worse
+  S₂ and L on the synthetic data (also against the M1 + DiffAug ablation), with less isotropic volumes in
+  both datasets. Standard ViT-GAN stabilizers (lower learning rate, improved spectral norm, Adam β₁ = 0,
+  generator EMA, a smaller trainable part) did not remove the instability; a frozen Swin critic cannot be
+  trained with WGAN-GP at all (the gradient penalty dominates) and, with a hinge loss, does not control φ.
+- **RQ2 — SAM instead of a global threshold: no, for this kind of image.** On high-contrast two-phase
+  micrographs zero-shot SAM is a worse segmentation than Otsu against a true ground truth (a systematic
+  one-pixel dilation, φ +16 %). The GAN reproduces SAM's map faithfully, so M3 inherits this bias and is
+  significantly worse than M2 on both datasets. The front-end shifts the GAN's target more than any change
+  of critic does: segmentation quality matters more than the critic architecture.
+- **RQ3 — Swin-T as an additional critic: it matches the baseline and makes training more stable.** The CNN +
+  frozen-Swin ensemble (M4, Vision-aided GAN style) is statistically level with SliceGAN on both datasets,
+  reproduces φ best (exactly on MicroLib, within 0.002 on synthetic), is significantly better than the
+  Swin-only critic on synthetic data and has the most stable training (best epoch = last on MicroLib, lowest
+  and tightest selection-free scores on synthetic). Saliency maps explain why the two critics combine well:
+  the CNN judges interfaces, the frozen Swin global texture. Used as a fine-tuning stage of a converged
+  SliceGAN (M5), the Swin critic gives no gain over training the CNN alone for the same extra steps.
+
+**Overall.** SliceGAN's small CNN critic is hard to beat on two-phase 64³ microstructures. Vision Transformers
+help where they add information without replacing that critic: a frozen pretrained Swin-T next to the CNN
+gives the most stable and best-calibrated model, at the cost of a 0.18 M-parameter head. A second lesson is
+methodological: single 64³ volumes are noisy samples (φ ±0.05), and model rankings obtained with a few
+seeds reversed when re-evaluated. Separate selection, validation and test seeds and bootstrap intervals
+were needed to reach conclusions that hold.
+
+**Limitations.** One training run per model and dataset (GAN training is not deterministic on GPU, and the
+v2 rerun showed run-to-run variability); 64 px slices, which force Swin-T's windows down to 4 × 4 and 2 × 2
+and use the backbone far from its 224 px pretraining resolution; one real micrograph, high contrast and
+two phases, where a global threshold is already near-optimal.
 
 SliceGAN is the 2021 literature baseline; 2024 works (Micro3Diff, DDPM-GAN) improve descriptors and
 stability with diffusion models, but are outside the scope of a Vision Transformer course project. The
-contribution here is the evaluation of Swin critics and SAM as a phase front-end.
+contribution here is a controlled evaluation of Swin critics and of SAM as a phase front-end.
 
-**Future work.** Anisotropic materials (three-view SliceGAN), homogenization of the exported periodic
-RVEs (FEM/FFT/FNO) with an RVE-size convergence study, Swin critics on 128 px inputs (suggested by
-the linear probe), multi-seed statistics for the Swin-based models, and diffusion-based generators.
+**Future work.** Swin critics on 128 px inputs (the linear probe gains about 10 points at 128 px);
+second training seeds for every model; harder micrographs (low contrast, texture, three phases) where SAM's
+object-level segmentation can pay off, possibly with point prompts or a fine-tuned mask decoder;
+anisotropic materials (three-view SliceGAN, which would also preserve the banding seen in Section 5.4);
+homogenization of the exported periodic RVEs (FEM/FFT/FNO) with an RVE-size convergence study; and
+diffusion-based generators.
 
 ## 7. Planning
 
 | Task | Owner | Status |
 |------|-------|--------|
-| Repo skeleton, configs, Makefile, Poetry setup | Student | Done |
-| Datasets: synthetic + MicroLib 000210 | Student | Done |
-| Descriptors φ / S₂ / L + tests | Student | Done |
-| M1 SliceGAN baseline | Student | Done (final run in progress) |
-| M2 Swin-T critic + stabilization study | Student | In progress |
-| M3 SAM front-end | Student | Done (final run pending) |
-| M4 / M5 Vision-aided extensions | Student | In progress |
-| Generation, metrics, figures, viewer | Student | Done (final numbers pending) |
-| Report | Student | Draft |
-| Presentation (12 Oct) | Student | Pending |
+| Repo skeleton, configs, Makefile, Poetry setup, tests, MLflow tracking | Student | Done |
+| Datasets: synthetic + MicroLib 000210; EDA notebook | Student | Done |
+| Descriptors φ / S₂ / L, bootstrap intervals + tests | Student | Done |
+| M1 SliceGAN baseline (+ DiffAug ablation, M1-extended) | Student | Done |
+| M2 Swin-T critic + stabilization study (v1–v3, probes A/B/C, hinge variants) | Student | Done |
+| M3 SAM front-end | Student | Done |
+| M4 / M5 Vision-aided extensions | Student | Done |
+| Evaluation protocol (train / validation / test seeds), figures, viewer, saliency | Student | Done |
+| RVE export for FEM / FFT codes | Student | Done |
+| Report (English + Spanish, PDF) | Student | Done (5 Oct) |
+| Presentation, 15 min | Student | 12 Oct |
+| Optional: second training seeds, Streamlit viewer, Swin at 128 px | Student | Week of 5–12 Oct, if time allows |
 
 ## References
 
