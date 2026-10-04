@@ -471,23 +471,6 @@ anisotropic materials (three-view SliceGAN, which would also preserve the bandin
 homogenization of the exported periodic RVEs (FEM/FFT/FNO) with an RVE-size convergence study; and
 diffusion-based generators.
 
-## 7. Planning
-
-| Task | Owner | Status |
-|------|-------|--------|
-| Repo skeleton, configs, Makefile, Poetry setup, tests, MLflow tracking | Student | Done |
-| Datasets: synthetic + MicroLib 000210; EDA notebook | Student | Done |
-| Descriptors φ / S₂ / L, bootstrap intervals + tests | Student | Done |
-| M1 SliceGAN baseline (+ DiffAug ablation, M1-extended) | Student | Done |
-| M2 Swin-T critic + stabilization study (v1–v3, probes A/B/C, hinge variants) | Student | Done |
-| M3 SAM front-end | Student | Done |
-| M4 / M5 Vision-aided extensions | Student | Done |
-| Evaluation protocol (train / validation / test seeds), figures, viewer, saliency | Student | Done |
-| RVE export for FEM / FFT codes | Student | Done |
-| Report (English + Spanish, PDF) | Student | Done (5 Oct) |
-| Presentation, 15 min | Student | 12 Oct |
-| Optional: second training seeds, Streamlit viewer, Swin at 128 px | Student | Week of 5–12 Oct, if time allows |
-
 ## References
 
 - S. Kench, S. J. Cooper. Generating three-dimensional structures from a two-dimensional slice with

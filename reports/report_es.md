@@ -516,23 +516,6 @@ decodificador de máscaras ajustado; materiales anisótropos (SliceGAN con tres 
 el bandeado visto en la Sección 5.4); homogeneización de los RVE periódicos exportados (FEM/FFT/FNO) con un
 estudio de convergencia del tamaño del RVE; y generadores basados en difusión.
 
-## 7. Planificación
-
-| Tarea | Responsable | Estado |
-|-------|-------------|--------|
-| Esqueleto del repositorio, configuraciones, Makefile, entorno Poetry, tests, seguimiento con MLflow | Estudiante | Hecho |
-| Datasets: sintético + MicroLib 000210; notebook exploratorio | Estudiante | Hecho |
-| Descriptores φ / S₂ / L, intervalos bootstrap + tests | Estudiante | Hecho |
-| M1 línea base SliceGAN (+ ablación DiffAug, M1 extendido) | Estudiante | Hecho |
-| M2 crítico Swin-T + estudio de estabilización (v1–v3, sondas A/B/C, variantes hinge) | Estudiante | Hecho |
-| M3 segmentación con SAM | Estudiante | Hecho |
-| M4 / M5 extensiones Vision-aided | Estudiante | Hecho |
-| Protocolo de evaluación (semillas de entrenamiento / validación / prueba), figuras, visor, saliencia | Estudiante | Hecho |
-| Exportación de RVE para códigos FEM / FFT | Estudiante | Hecho |
-| Informe (inglés + español, PDF) | Estudiante | Hecho (5 de octubre) |
-| Presentación, 15 min | Estudiante | 12 de octubre |
-| Opcional: segundas semillas de entrenamiento, visor en Streamlit, Swin a 128 px | Estudiante | Semana del 5 al 12 de octubre, si hay tiempo |
-
 ## Referencias
 
 - S. Kench, S. J. Cooper. Generating three-dimensional structures from a two-dimensional slice with
