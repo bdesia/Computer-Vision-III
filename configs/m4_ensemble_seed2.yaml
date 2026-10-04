@@ -1,0 +1,4 @@
+# Second training run of m4_ensemble: identical configuration, different training seed (run-to-run variability).
+base: m4_ensemble.yaml
+run_name: m4_ensemble_seed2
+seed: 43

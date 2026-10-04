@@ -1,0 +1,4 @@
+# Second training run of m2_swin: identical configuration, different training seed (run-to-run variability).
+base: m2_swin.yaml
+run_name: m2_swin_seed2
+seed: 43

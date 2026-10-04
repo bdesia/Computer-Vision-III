@@ -44,6 +44,15 @@ def test_critic_upsamples_when_input_size_differs():
     assert critic(torch.rand(2, 2, 64, 64)).shape == (2, 1)
 
 
+def test_patch_heads_upsample_64px_slices_to_input_size():
+    backbone = timm.create_model("swin_tiny_patch4_window7_224", pretrained=False, img_size=128, num_classes=1,
+                                 drop_path_rate=0.0)
+    critic = SwinCritic(backbone, 2, 128, head="multiscale_patch", feature_stages=(2, 3, 4)).eval()
+    x = torch.rand(2, 2, 64, 64)
+    assert [tuple(m.shape[-2:]) for m in critic.score_maps(x)] == [(16, 16), (8, 8), (4, 4)]
+    assert critic.forward_per_scale(x).shape == (2, 3) and critic(x).shape == (2, 1)
+
+
 def test_freeze_stages_keeps_last_stages_and_head_trainable():
     critic = _critic()
     critic.freeze_stages([3, 4])

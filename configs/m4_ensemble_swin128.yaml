@@ -1,0 +1,10 @@
+# M4 with the Swin branch at 128 px: slices are upsampled (bilinear) from 64 to 128 px before the frozen Swin-T,
+# so its attention windows stay 7 x 7 in stages 1-2 and the backbone runs closer to its 224 px pretraining
+# resolution. Motivation: the linear probe separates real from generated slices at 73 % with 64 px input and
+# 83 % at 128 px. Everything else (generator, CNN critic, losses, DiffAug, protocol) is identical to M4.
+base: m4_ensemble.yaml
+run_name: m4_ensemble_swin128
+
+model:
+  swin:
+    input_size: 128

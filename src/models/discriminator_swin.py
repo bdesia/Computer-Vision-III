@@ -204,6 +204,9 @@ class SwinCritic(nn.Module):
 
     def score_maps(self, x: torch.Tensor) -> list[torch.Tensor]:
         """Per-scale (N, 1, h, w) score maps of the multiscale_patch head (for inspection and tests)."""
+        if x.shape[-1] != self.input_size:
+            x = F.interpolate(x, size=(self.input_size, self.input_size), mode=self.upsample,
+                              align_corners=False)
         return [head(f) for head, f in zip(self.patch_heads, self.stage_features(x))]
 
 

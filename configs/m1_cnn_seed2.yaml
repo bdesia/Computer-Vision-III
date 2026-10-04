@@ -1,0 +1,4 @@
+# Second training run of m1_cnn: identical configuration, different training seed (run-to-run variability).
+base: m1_cnn.yaml
+run_name: m1_cnn_seed2
+seed: 43
