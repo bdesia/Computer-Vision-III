@@ -9,18 +9,26 @@ Generate 3D volumes (64³) that are statistically equivalent to a 2D micrograph 
 isotropic material using **SliceGAN**, and measure:
 
 1. whether a **Swin-T discriminator** (hierarchical Vision Transformer) improves on the original CNN
-   discriminator, and
-2. whether using **SAM** as a phase-segmentation front-end improves the descriptors of the generated
-   volume (phase fraction `φ` and two-point correlation `S₂`).
+   discriminator (RQ1),
+2. whether using **SAM** as a phase-segmentation front-end improves the generated volumes (RQ2), and
+3. whether a pretrained Swin-T helps as an **additional** critic next to the CNN, as in Vision-aided GAN
+   (RQ3, extension).
 
-| ID | Model | 2D input | 3D generator | 2D discriminator |
-|----|-------|----------|--------------|------------------|
-| M1 | SliceGAN baseline | training image | SliceGAN 3D CNN | SliceGAN CNN |
-| M2 | SliceGAN–Swin | same as M1 | same G | Swin-T (Hugging Face) |
-| M3 | SliceGAN–Swin+SAM | SAM phase map | same G | same Swin-T as M2 |
+Quality is measured with the phase fraction `φ`, the two-point correlation `S₂(r)` and the lineal path `L(r)`.
 
-- M1 vs M2: does the ViT discriminator help?
+| ID | Model | 2D input | 3D generator | 2D critic |
+|----|-------|----------|--------------|-----------|
+| M1 | SliceGAN baseline | Otsu map | SliceGAN 3D CNN | SliceGAN CNN |
+| M1 + DiffAug | ablation | Otsu map | same G | SliceGAN CNN + DiffAug |
+| M2 | SliceGAN–Swin | Otsu map | same G | Swin-T (timm, ImageNet), stages 3–4 trainable, DiffAug |
+| M3 | SliceGAN–Swin+SAM | SAM phase map | same G | same critic as M2 |
+| M4 | ensemble | Otsu map | same G | SliceGAN CNN + frozen Swin-T with per-position heads |
+| M5 | fine-tune | Otsu map | M1's G + 20 epochs | as M4 |
+| M1-ext | fair baseline for M5 | Otsu map | M1's G + 20 epochs | SliceGAN CNN |
+
+- M1 vs M2 (and M1 + DiffAug vs M2): does the ViT critic help?
 - M2 vs M3: does SAM preprocessing help?
+- M1 vs M4, M1-ext vs M5: does a Swin critic help next to the CNN?
 
 ## Layout
 
@@ -332,7 +340,31 @@ run).
 
 ## Results
 
-TBD — see `reports/report.md`.
+Full report: [reports/report.pdf](reports/report.pdf) (English) and
+[reports/report_es.pdf](reports/report_es.pdf) (Spanish). The numbers are in `reports/metrics.csv` and
+`reports/comparison_vs_m1_<dataset>.csv`.
+
+Test S₂ MAE on 128 volumes per model, against the common reference (MicroLib: Otsu map; synthetic: exact
+ground-truth mask). "Worse" means the 95 % bootstrap interval of the difference to M1 excludes zero.
+
+| Model | MicroLib 000210 | Synthetic |
+|-------|-----------------|-----------|
+| M1 CNN (SliceGAN) | 0.0029 | 0.0040 |
+| M1 + DiffAug | 0.0009 | 0.0045 |
+| M2 Swin + DiffAug | 0.0077 | 0.0093 (worse) |
+| M3 Swin + DiffAug, SAM map | 0.0328 (worse) | 0.0298 (worse) |
+| M4 CNN + frozen Swin | 0.0014 (φ exact) | 0.0039 (most stable training) |
+| M5 M1 + Swin fine-tune | 0.0097 | 0.0013 |
+| M1 extended | 0.0059 | 0.0020 |
+
+- **RQ1:** a Swin-T critic is not better than the CNN critic. It needs DiffAug to train at all, is
+  significantly worse on synthetic data and gives less isotropic volumes.
+- **RQ2:** zero-shot SAM segments this kind of high-contrast image worse than Otsu (it dilates every particle by
+  about 1 px), and M3 inherits that bias.
+- **RQ3:** the CNN + frozen Swin-T ensemble (M4) matches SliceGAN, reproduces φ best and trains most
+  stably. Swin fine-tuning (M5) is not distinguishable from training the CNN for the same extra steps.
+- No model is significantly better than M1. Random volumes with the correct φ score 0.042, so all
+  models except M3 sit an order of magnitude below that floor.
 
 ## References
 
