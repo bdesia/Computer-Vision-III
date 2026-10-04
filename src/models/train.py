@@ -271,12 +271,14 @@ def _train(cfg: dict, tracker: Tracker) -> Path:
                 continue
             netG.zero_grad(set_to_none=True)
             fake = netG(sample_noise(m_g, nz, device))
-            err_g = 0.0
-            for perm in SLICE_PERMUTATIONS:
+            # One backward per slice orientation (same gradient as summing first): only one orientation's
+            # critic activations are held at a time, which keeps large-input critics (Swin at 128 px) in memory.
+            err_g = torch.zeros((), device=device)
+            for k, perm in enumerate(SLICE_PERMUTATIONS):
                 slices = volume_to_slices(fake, perm)
-                for c in critics:
-                    err_g = err_g - c.weight * critic_scores(c.net, c.augment(slices), c.per_scale).mean()
-            err_g.backward()
+                err = sum(-c.weight * critic_scores(c.net, c.augment(slices), c.per_scale).mean() for c in critics)
+                err.backward(retain_graph=k < len(SLICE_PERMUTATIONS) - 1)
+                err_g = err_g + err.detach()
             optG.step()
             g_step += 1
             if ema_decay:
