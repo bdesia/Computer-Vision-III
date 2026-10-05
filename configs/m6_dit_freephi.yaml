@@ -1,8 +1,0 @@
-# M6 without the phase-fraction constraint: same DiT weights (copied from m6_dit), sdedit sampler binarized
-# at 0, so the phase fraction is whatever the model produces. Shows what the transformer contributes alone.
-base: m6_dit.yaml
-run_name: m6_dit_freephi
-
-model:
-  dit:
-    fixed_phi: false

@@ -29,8 +29,6 @@ MODEL_STYLE = {
     "m2_swin_seed2": {"label": "M2 Swin (run 2)", "color": "#eb6834", "ls": ":", "marker": "s"},
     "m4_ensemble_seed2": {"label": "M4 CNN+Swin (run 2)", "color": "#eda100", "ls": ":", "marker": "D"},
     "m4_ensemble_swin128": {"label": "M4, Swin at 128 px", "color": "#eda100", "ls": "-.", "marker": "d"},
-    "m6_dit": {"label": "M6 diffusion transformer", "color": "#0f8b8d", "ls": "-", "marker": "*"},
-    "m6_dit_freephi": {"label": "M6, free phi", "color": "#0f8b8d", "ls": ":", "marker": "*"},
 }
 INK, INK_MUTED, GRID = "#1a1a19", "#6b6a64", "#e4e3dc"
 
