@@ -30,7 +30,7 @@ METRIC_KEYS = ("n_volumes", "phi_mean", "phi_std", "phi_train", "abs_dphi", "s2_
 
 # Main models first, then the repeat runs and variants of Section 5.7 (skipped where not generated)
 VIEWER_CONFIGS = ("m1_cnn", "m1_cnn_diffaug", "m2_swin", "m3_swin_sam", "m4_ensemble", "m5_finetune", "m1_extended",
-                  "m1_cnn_seed2", "m2_swin_seed2", "m4_ensemble_seed2", "m4_ensemble_swin128")
+                  "m1_cnn_seed2", "m2_swin_seed2", "m4_ensemble_seed2", "m4_ensemble_swin128", "m6_dit")
 DATASETS = ("configs/data/microlib_000210.yaml", "synthetic")  # "synthetic" = no overlay (default dataset)
 
 

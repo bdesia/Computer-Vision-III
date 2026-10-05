@@ -19,7 +19,7 @@ TRAIN_ORDER := m1_cnn m1_cnn_diffaug m1_extended m5_finetune m2_swin m3_swin_sam
 CONFIGS := $(foreach m,$(MODELS),configs/$(m).yaml)
 
 .PHONY: help setup vendor data sam train-all train-m1 train-m1-diffaug train-m1-ext train-m2 train-m3 \
-        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve eda app
+        train-m4 train-m5 train-m6 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve eda app
 
 help:
 	@echo "setup              create .venv with Poetry (DEVICE=cpu for CPU torch)"
@@ -34,6 +34,7 @@ help:
 	@echo "train-m3           M3  Swin-T critic + DiffAug on the SAM phase map"
 	@echo "train-m4           M4  CNN + frozen-Swin critics (ensemble), from scratch"
 	@echo "train-m5           M5  M1's best G + 20 epochs with the M4 ensemble (needs train-m1)"
+	@echo "train-m6           M6  diffusion transformer (2D DiT + multi-plane 3D sampling), presentation extra"
 	@echo "train-<config>     any configs/<config>.yaml, e.g. make train-m2_swin_patchheads"
 	@echo "train-all          all seven models in dependency order"
 	@echo "generate           128 volumes per model + metrics (metrics.yaml, curves.npz)"
@@ -74,6 +75,7 @@ train-m2: train-m2_swin
 train-m3: train-m3_swin_sam
 train-m4: train-m4_ensemble
 train-m5: train-m5_finetune
+train-m6: train-m6_dit
 
 define run_train
 	$(PY) -m src.models.train --config configs/$(1).yaml $(DATA_ARG)

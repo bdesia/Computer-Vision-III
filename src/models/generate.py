@@ -23,9 +23,21 @@ CURVE_KEYS = ("s2_train", "s2_generated", "L_train", "L_generated",
 
 
 def load_generator(cfg: dict, run_dir: Path, device, checkpoint: str = "G_last.pt") -> torch.nn.Module:
-    """Rebuild the upstream generator from its params file and load trained weights."""
-    netG = build_generator(cfg, run_dir, training=False)
+    """Rebuild the upstream generator from its params file and load trained weights.
+
+    For M6 (`model.generator: dit`) the checkpoint holds DiT weights and the returned module samples
+    volumes by multi-plane diffusion (`sample_volume(seed)`).
+    """
     ckpt = run_dir / checkpoint
+    if cfg["model"].get("generator", "slicegan") == "dit":
+        from src.models.diffusion import build_volume_generator
+
+        try:
+            state = torch.load(ckpt, map_location=device, weights_only=True)
+        except FileNotFoundError as exc:
+            raise FileNotFoundError(f"No checkpoint {ckpt}; train the model first.") from exc
+        return build_volume_generator(cfg, state, device)
+    netG = build_generator(cfg, run_dir, training=False)
     try:
         netG.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))
     except FileNotFoundError as exc:
@@ -36,6 +48,13 @@ def load_generator(cfg: dict, run_dir: Path, device, checkpoint: str = "G_last.p
 @torch.no_grad()
 def generate_volumes(netG: torch.nn.Module, seeds: list[int], z_channels: int, device) -> list[np.ndarray]:
     """One uint8 {0, 1} volume per seed (seeded latent cube, generator in eval mode)."""
+    if hasattr(netG, "sample_volume"):  # M6: multi-plane diffusion sampling, seeded 3D noise
+        volumes = []
+        for i, seed in enumerate(seeds):
+            volumes.append(netG.sample_volume(seed))
+            if (i + 1) % 16 == 0:
+                log.info("sampled %d / %d volumes", i + 1, len(seeds))
+        return volumes
     volumes = []
     for seed in seeds:
         gen = torch.Generator(device=device).manual_seed(int(seed))

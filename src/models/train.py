@@ -381,7 +381,12 @@ def main() -> None:
     setup_logging(cfg["paths"]["logs"], cfg["run_name"], cfg["logging"]["level"])
     set_seed(cfg["seed"])
     try:
-        train(cfg)
+        if cfg["model"].get("generator", "slicegan") == "dit":  # M6: diffusion transformer, no critic
+            from src.models.train_diffusion import train as train_dit
+
+            train_dit(cfg)
+        else:
+            train(cfg)
     except (FileNotFoundError, ValueError, ImportError, RuntimeError) as exc:
         log.exception("Training failed: %s", exc)
         raise SystemExit(1) from exc

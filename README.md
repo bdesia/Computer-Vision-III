@@ -43,7 +43,7 @@ src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, gen
 src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, app data helpers, report PDF
 app/                streamlit_app.py — interactive explorer (make app)
 src/tracking.py     optional MLflow tracking and backfill of finished runs
-tests/              pytest (88 tests)
+tests/              pytest (95 tests)
 notebooks/          00_eda.ipynb — training images, Otsu vs SAM, crop statistics, 2D descriptors
 reports/            report.md / report_es.md (+ PDFs), figures/, metrics*.csv, comparison_vs_m1_*.csv,
                     probes/ and runs/ (per-epoch selection logs), viewer/ (interactive volume viewer)
@@ -124,6 +124,7 @@ Outputs, with `<name>` = `synthetic` or `microlib_000210`:
 | `make train-m3` | M3: as M2, on the SAM phase map (run `make sam` first) | `configs/m3_swin_sam.yaml` |
 | `make train-m4` | M4: CNN + frozen-Swin critics (ensemble), from scratch | `configs/m4_ensemble.yaml` |
 | `make train-m5` | M5: M1's best G + 20 epochs with the M4 ensemble (needs M1) | `configs/m5_finetune.yaml` |
+| `make train-m6` | M6 (ongoing, presentation extra): 2D diffusion transformer, 3D volumes by multi-plane DDIM sampling | `configs/m6_dit.yaml` |
 | `make train-all` | all seven, M1 first | — |
 
 Every target takes `DATA=configs/data/microlib_000210.yaml` for the real micrograph (default: synthetic),

@@ -45,6 +45,10 @@ def latent_size_for(size: int) -> int:
 @torch.no_grad()
 def generate_rve(netG, size: int, seed: int, z_channels: int, device, periodic: bool) -> np.ndarray:
     """One label volume (Z, Y, X); periodic volumes are (size - 2)^3 and tile seamlessly."""
+    if hasattr(netG, "sample_volume"):  # M6 diffusion: fixed 64^3, non-periodic
+        if periodic or size != netG.size:
+            raise ValueError(f"The diffusion model (M6) generates non-periodic {netG.size}^3 volumes only")
+        return netG.sample_volume(seed)
     lz = latent_size_for(size)
     gen = torch.Generator(device=device).manual_seed(int(seed))
     z = torch.randn(1, z_channels, lz, lz, lz, device=device, generator=gen)
