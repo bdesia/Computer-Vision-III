@@ -557,6 +557,15 @@ descriptores y estabilidad con modelos de difusión, pero están fuera del alcan
 de Vision Transformers. La contribución aquí es una evaluación controlada de críticos Swin y de SAM como
 etapa de segmentación.
 
+**Trabajo en curso: un transformer de difusión como alternativa a SliceGAN.** En lugar de un crítico ViT,
+se está reemplazando el propio generador por un Vision Transformer. Un pequeño Diffusion Transformer 2D (DiT;
+Peebles & Xie, 2023), un ViT que predice el ruido sobre parches de 4 × 4 px, se entrena con recortes de
+64 × 64 de la misma micrografía. Luego se genera un volumen de 64³ a partir de ruido 3D, eliminando el ruido
+de sus rebanadas en x, y y z de forma alternada: el muestreo multiplano de Micro3Diff (Lee & Yun, 2024) con un
+transformer en lugar de una U-Net. Esto conserva la propiedad clave de SliceGAN (entrenar solo con una imagen
+2D) sin el juego adversarial que volvió inestables a los críticos Swin. Se evaluará con el mismo protocolo y
+los mismos descriptores; sus resultados no forman parte de este informe.
+
 **Trabajo futuro.** Cinco o más corridas de entrenamiento por modelo, que la dispersión entre corridas exige
 antes de cualquier ranking; micrografías más difíciles (bajo contraste, texturas,
 tres fases), donde la segmentación por objetos de SAM puede rendir, posiblemente con prompts de puntos o un
@@ -575,6 +584,7 @@ estudio de convergencia del tamaño del RVE; y generadores basados en difusión.
   *ICLR*, 2021.
 - A. Kirillov et al. Segment Anything. *ICCV*, 2023.
 - I. Gulrajani et al. Improved Training of Wasserstein GANs. *NeurIPS*, 2017.
+- W. Peebles, S. Xie. Scalable Diffusion Models with Transformers (DiT). *ICCV*, 2023.
 - K. Lee et al. ViTGAN: Training GANs with Vision Transformers. *ICLR*, 2022.
 - N. Kumari, R. Zhang, E. Shechtman, J.-Y. Zhu. Ensembling Off-the-shelf Models for GAN Training.
   *CVPR*, 2022.

@@ -506,6 +506,15 @@ SliceGAN is the 2021 literature baseline; 2024 works (Micro3Diff, DDPM-GAN) impr
 stability with diffusion models, but are outside the scope of a Vision Transformer course project. The
 contribution here is a controlled evaluation of Swin critics and of SAM as a phase front-end.
 
+**Ongoing work: a diffusion transformer as an alternative to SliceGAN.** Instead of a ViT critic, the
+generator itself is being replaced by a Vision Transformer. A small 2D Diffusion Transformer (DiT; Peebles
+& Xie, 2023), a ViT that predicts the noise on 4 × 4 px patches, is trained on 64 × 64 crops of the same
+micrograph. A 64³ volume is then generated from 3D noise by denoising its slices along x, y and z in turn,
+the multi-plane sampling of Micro3Diff (Lee & Yun, 2024) with a transformer instead of a U-Net. This keeps
+SliceGAN's key property (training on one 2D image only) without the adversarial game that made the Swin
+critics unstable. It will be evaluated with the same protocol and descriptors; results are not part of
+this report.
+
 **Future work.** Five or more training runs per model, which the run-to-run spread requires before any
 ranking; harder micrographs (low contrast, texture, three phases) where SAM's
 object-level segmentation can pay off, possibly with point prompts or a fine-tuned mask decoder;
@@ -524,6 +533,7 @@ diffusion-based generators.
   *ICLR*, 2021.
 - A. Kirillov et al. Segment Anything. *ICCV*, 2023.
 - I. Gulrajani et al. Improved Training of Wasserstein GANs. *NeurIPS*, 2017.
+- W. Peebles, S. Xie. Scalable Diffusion Models with Transformers (DiT). *ICCV*, 2023.
 - K. Lee et al. ViTGAN: Training GANs with Vision Transformers. *ICLR*, 2022.
 - N. Kumari, R. Zhang, E. Shechtman, J.-Y. Zhu. Ensembling Off-the-shelf Models for GAN Training.
   *CVPR*, 2022.
