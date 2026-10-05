@@ -113,3 +113,20 @@ def test_train_then_generate_end_to_end_on_cpu(tmp_path):
     gen = load_generator(cfg, run_dir, torch.device("cpu"), checkpoint="snapshots/G_epoch001.pt")
     vols = generate_volumes(gen, [0, 1], cfg["z_channels"], torch.device("cpu"))
     assert len(vols) == 2 and vols[0].shape == (16, 16, 16)
+
+
+def test_sdedit_sampler_is_deterministic_and_keeps_the_phase_fraction():
+    model = _tiny()
+    ab = dm.cosine_alpha_bar(50)
+    a = dm.sample_volume_sdedit(model, ab, 16, seed=2, steps=4, t_star=30, rounds=3, phi=0.25)
+    b = dm.sample_volume_sdedit(model, ab, 16, seed=2, steps=4, t_star=30, rounds=3, phi=0.25)
+    assert a.shape == (16, 16, 16) and np.array_equal(a, b)
+    assert abs(a.mean() - 0.25) < 0.01  # quantile binarization fixes phi
+    free = dm.sample_volume_sdedit(model, ab, 16, seed=2, steps=4, t_star=30, rounds=1, phi=None)
+    assert set(np.unique(free)) <= {0, 1}
+
+
+def test_binarize_signed_quantile():
+    x = torch.linspace(-1, 1, 1000)
+    assert dm.binarize_signed(x, None).eq(1).float().mean().item() == pytest.approx(0.5, abs=0.002)
+    assert dm.binarize_signed(x, 0.2).eq(1).float().mean().item() == pytest.approx(0.2, abs=0.002)

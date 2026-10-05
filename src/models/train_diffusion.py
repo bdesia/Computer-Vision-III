@@ -19,7 +19,8 @@ import torch.nn.functional as F
 import yaml
 
 from src.features.descriptors import phase_fraction, s2_mae, s2_radial, s2_volume
-from src.models.diffusion import build_dit, cosine_alpha_bar, q_sample, sample_slices, sample_volume
+from src.models.diffusion import (build_dit, cosine_alpha_bar, q_sample, sample_slices, sample_volume,
+                                  sample_volume_sdedit)
 from src.models.slicegan_wrapper import RandomCropSampler, load_label_map
 from src.models.train import SELECTION_FIELDS, update_ema
 from src.tracking import Tracker
@@ -40,7 +41,13 @@ def validation(model, alpha_bar, cfg: dict, s2_ref: np.ndarray) -> tuple[dict, l
     """3D volumes from held-out seeds (fast sampler settings) scored against the training image."""
     tc = cfg["train"]
     seeds = tc["select_seeds"][: tc["val_volumes"]]
-    vols = [sample_volume(model, alpha_bar, cfg["volume_size"], s, tc["val_steps"], tc["val_mode"]) for s in seeds]
+    d = cfg["model"]["dit"]
+    if tc["val_mode"] == "sdedit":
+        phi = cfg["_phi_train"] if d.get("fixed_phi") else None
+        vols = [sample_volume_sdedit(model, alpha_bar, cfg["volume_size"], s, tc["val_steps"], d.get("sdedit_t", 700),
+                                     tc.get("val_rounds", d.get("sdedit_rounds", 12)), phi) for s in seeds]
+    else:
+        vols = [sample_volume(model, alpha_bar, cfg["volume_size"], s, tc["val_steps"], tc["val_mode"]) for s in seeds]
     rmax = cfg["metrics"]["s2_rmax"]
     s2 = np.mean([s2_volume(v, rmax)["mean"] for v in vols], axis=0)
     return {"val_phi": float(np.mean([phase_fraction(v) for v in vols])), "val_s2_mae": s2_mae(s2, s2_ref)}, vols
@@ -89,6 +96,7 @@ def _train(cfg: dict, run_dir: Path, tracker: Tracker) -> None:
     sampler = RandomCropSampler(labels, cfg["img_size"], cfg["n_phases"], device, seed=cfg["seed"],
                                 augment=cfg["data"]["augment"])
     s2_ref = s2_radial(labels, cfg["metrics"]["s2_rmax"])
+    cfg = {**cfg, "_phi_train": float(labels.mean())}  # for the fixed-phi sampler during validation
 
     model = build_dit(cfg).to(device)
     ema = copy.deepcopy(model).requires_grad_(False).eval()

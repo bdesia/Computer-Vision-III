@@ -36,7 +36,8 @@ def load_generator(cfg: dict, run_dir: Path, device, checkpoint: str = "G_last.p
             state = torch.load(ckpt, map_location=device, weights_only=True)
         except FileNotFoundError as exc:
             raise FileNotFoundError(f"No checkpoint {ckpt}; train the model first.") from exc
-        return build_volume_generator(cfg, state, device)
+        train_map = load_label_map(Path(cfg["data"]["train_dirs"][cfg["data"]["branch"]]) / "image.png")
+        return build_volume_generator(cfg, state, device, phi=float(train_map.mean()))
     netG = build_generator(cfg, run_dir, training=False)
     try:
         netG.load_state_dict(torch.load(ckpt, map_location=device, weights_only=True))

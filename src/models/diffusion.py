@@ -6,10 +6,16 @@ the diffusion timestep (adaLN-Zero), and unpatchified into a noise prediction. I
 DDPM (epsilon prediction, cosine schedule) on 64 x 64 crops of the one training micrograph, with the phase
 map encoded as -1 (matrix) / +1 (inclusion).
 
-3D volumes are generated like Micro3Diff (Lee & Yun, 2024): start from 3D Gaussian noise and run DDIM; at
-every step the noise of the volume is predicted slice by slice along one or more axes and the per-axis
-predictions are averaged, so every orthogonal section is pulled towards the 2D statistics. No 3D data and
-no adversarial training are involved.
+3D volumes are generated from 3D Gaussian noise without any 3D data or adversarial training, with one of:
+
+- "average" / "cycle": multi-plane DDIM as in Micro3Diff (Lee & Yun, 2024): at every step the noise is predicted
+  slice by slice along all axes (averaged) or along one axis per step. With this model both drift to the
+  majority phase: once one axis has been denoised, slices along the other axes look like stripes the 2D model
+  never saw, and it falls back to predicting the matrix.
+- "sdedit": a stack of independent 2D samples along z is made 3D-consistent by rounds of SDEdit
+  (Meng et al., 2022): re-noise to t*, denoise along the next axis (y, x, z, ...), binarize. Each round makes
+  another family of sections consistent; with `fixed_phi` the binarization keeps the training phase fraction,
+  which otherwise drifts towards the matrix in the same way.
 """
 
 from __future__ import annotations
@@ -210,6 +216,46 @@ def sample_volume(model: DiT, alpha_bar: torch.Tensor, size: int, seed: int, ste
     return (x > 0).to(torch.uint8).cpu().numpy()
 
 
+def binarize_signed(x: torch.Tensor, phi: float | None) -> torch.Tensor:
+    """{-1, +1} field: sign of x, or thresholded at the (1 - phi) quantile so that a fraction phi is +1."""
+    if phi is None:
+        return torch.where(x > 0, 1.0, -1.0)
+    flat = x.flatten()
+    sample = flat[:: max(1, flat.numel() // 200_000)].float()  # quantile on a subsample (torch size limit)
+    return torch.where(x > torch.quantile(sample, 1 - phi), 1.0, -1.0)
+
+
+@torch.no_grad()
+def denoise_from(model: DiT, x: torch.Tensor, alpha_bar: torch.Tensor, t_start: int, steps: int, axes_at, chunk: int,
+                 eta: float = 0.0, generator: torch.Generator | None = None) -> torch.Tensor:
+    """DDIM on a volume from timestep t_start down to 0 on the `steps`-point grid; axes_at(i) -> axes of step i."""
+    ts = [t for t in ddim_timesteps(len(alpha_bar), steps) if t <= t_start]
+    for i, t in enumerate(ts):
+        eps = predict_eps_volume(model, x, t, axes_at(i), chunk)
+        ab_prev = alpha_bar[ts[i + 1]] if i + 1 < len(ts) else torch.tensor(1.0, device=x.device)
+        x = ddim_step(x, eps, alpha_bar[t], ab_prev, eta, generator)
+    return x
+
+
+@torch.no_grad()
+def sample_volume_sdedit(model: DiT, alpha_bar: torch.Tensor, size: int, seed: int, steps: int = 20,
+                         t_star: int = 700, rounds: int = 12, phi: float | None = None, chunk: int = 64,
+                         device=None) -> np.ndarray:
+    """Independent 2D samples along z, then `rounds` SDEdit passes along y, x, z, ... (see module docstring)."""
+    device = device or next(model.parameters()).device
+    gen = torch.Generator(device=device).manual_seed(int(seed))
+    ab = alpha_bar.to(device)
+    x = torch.randn(size, size, size, device=device, generator=gen)
+    x = denoise_from(model, x, ab, len(ab) - 1, steps, lambda i: ("z",), chunk, generator=gen)
+    for r in range(rounds):
+        axis = ("y", "x", "z")[r % 3]
+        x0 = binarize_signed(x, phi)
+        noise = torch.randn(x0.shape, device=device, generator=gen)
+        x = ab[t_star].sqrt() * x0 + (1 - ab[t_star]).sqrt() * noise
+        x = denoise_from(model, x, ab, t_star, steps, lambda i, a=axis: (a,), chunk, generator=gen)
+    return (binarize_signed(x, phi) > 0).to(torch.uint8).cpu().numpy()
+
+
 @torch.no_grad()
 def sample_slices(model: DiT, alpha_bar: torch.Tensor, n: int, seed: int, steps: int = 50, chunk: int = 64,
                   device=None) -> np.ndarray:
@@ -231,23 +277,31 @@ class DiffusionVolumeGenerator(nn.Module):
     """Wraps a trained DiT so the evaluation code can call `sample_volume(seed)` like a generator."""
 
     def __init__(self, model: DiT, alpha_bar: torch.Tensor, size: int, steps: int, mode: str, chunk: int,
-                 eta: float = 0.0):
+                 eta: float = 0.0, t_star: int = 700, rounds: int = 12, phi: float | None = None):
         super().__init__()
         self.model = model
         self.register_buffer("alpha_bar", alpha_bar, persistent=False)
         self.size, self.steps, self.mode, self.chunk, self.eta = size, steps, mode, chunk, eta
+        self.t_star, self.rounds, self.phi = t_star, rounds, phi
 
     def sample_volume(self, seed: int) -> np.ndarray:
+        if self.mode == "sdedit":
+            return sample_volume_sdedit(self.model, self.alpha_bar, self.size, seed, self.steps, self.t_star,
+                                        self.rounds, self.phi, self.chunk)
         return sample_volume(self.model, self.alpha_bar, self.size, seed, self.steps, self.mode, self.chunk,
                              eta=self.eta)
 
 
-def build_volume_generator(cfg: dict, state_dict: dict, device) -> DiffusionVolumeGenerator:
-    """Rebuild the DiT from config, load weights and wrap it with the sampling settings of `model.dit`."""
+def build_volume_generator(cfg: dict, state_dict: dict, device, phi: float | None = None) -> DiffusionVolumeGenerator:
+    """Rebuild the DiT from config, load weights and wrap it with the sampling settings of `model.dit`.
+
+    `phi` is the training phase fraction, kept fixed by the sdedit sampler when `model.dit.fixed_phi` is set.
+    """
     d = cfg["model"]["dit"]
     model = build_dit(cfg)
     model.load_state_dict(state_dict)
     model = model.to(device).eval()
     return DiffusionVolumeGenerator(model, cosine_alpha_bar(d["timesteps"]), cfg["volume_size"],
                                     d["sample_steps"], d["sample_mode"], d.get("sample_chunk", 64),
-                                    d.get("sample_eta", 0.0)).to(device)
+                                    d.get("sample_eta", 0.0), d.get("sdedit_t", 700), d.get("sdedit_rounds", 12),
+                                    phi if d.get("fixed_phi") else None).to(device)
