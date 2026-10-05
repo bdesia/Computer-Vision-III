@@ -42,6 +42,11 @@ widgetsnbextension = "4.0.13"
 nbformat = "5.10.4"
 nbclient = "0.10.0"
 
+
+[tool.poetry.group.app.dependencies]
+streamlit = "1.39.0"
+plotly = "5.24.1"
+
 [[tool.poetry.source]]
 name = "pytorch-cu124"
 url = "https://download.pytorch.org/whl/cu124"

@@ -19,7 +19,7 @@ TRAIN_ORDER := m1_cnn m1_cnn_diffaug m1_extended m5_finetune m2_swin m3_swin_sam
 CONFIGS := $(foreach m,$(MODELS),configs/$(m).yaml)
 
 .PHONY: help setup vendor data sam train-all train-m1 train-m1-diffaug train-m1-ext train-m2 train-m3 \
-        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve eda
+        train-m4 train-m5 generate eval viewer test report-pdf mlflow-backfill mlflow-ui export-rve eda app
 
 help:
 	@echo "setup              create .venv with Poetry (DEVICE=cpu for CPU torch)"
@@ -39,6 +39,7 @@ help:
 	@echo "generate           128 volumes per model + metrics (metrics.yaml, curves.npz)"
 	@echo "eval               generate + metrics.csv, comparison vs M1, figures, viewer data"
 	@echo "viewer             export 4 volumes per run (both datasets) for reports/viewer/index.html"
+	@echo "app                Streamlit explorer: generate volumes, compare descriptors, download RVEs"
 	@echo "export-rve         RVEs for FEM/FFT codes (MODEL=m4_ensemble SIZE=128 SEEDS=\"0 1 2\" FORMATS=\"vti mhd inp\" PERIODIC=1)"
 	@echo "test               run pytest"
 	@echo "report-pdf         reports/report(_es).md -> PDF (pandoc + headless Edge)"
@@ -98,6 +99,9 @@ eval: generate
 
 viewer:
 	$(PY) -m src.visualization.export_viewer
+
+app:
+	$(PY) -m streamlit run app/streamlit_app.py
 
 test:
 	$(PY) -m pytest

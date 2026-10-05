@@ -40,9 +40,10 @@ external/SliceGAN/  upstream SliceGAN (git submodule, unmodified)
 src/data/           make_dataset.py — downloads or generates the 2D image and 64x64 crops
 src/features/       sam_segment.py (zero-shot SAM + reference scores), descriptors.py (φ, S₂, L, bootstrap)
 src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, generate.py, linear_probe.py
-src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, report PDF builder
+src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, app data helpers, report PDF
+app/                streamlit_app.py — interactive explorer (make app)
 src/tracking.py     optional MLflow tracking and backfill of finished runs
-tests/              pytest (82 tests)
+tests/              pytest (88 tests)
 notebooks/          00_eda.ipynb — training images, Otsu vs SAM, crop statistics, 2D descriptors
 reports/            report.md / report_es.md (+ PDFs), figures/, metrics*.csv, comparison_vs_m1_*.csv,
                     probes/ and runs/ (per-epoch selection logs), viewer/ (interactive volume viewer)
@@ -290,6 +291,27 @@ make test                                          # pytest
   `pipeline.png`; then exports the viewer data.
 
 Metric definitions are in `reports/report.md` §4.
+
+## Exploring the volumes
+
+**Static viewer.** `make viewer` exports 4 volumes per run of both datasets (the seven models, the second
+training runs and the 128 px variant) to `reports/viewer/viewer_data.json`; open
+`reports/viewer/index.html` in a browser (it also works from disk). It shows a rotatable 3D view, the
+three orthogonal sections, a crop of the model's own training map (Otsu, or SAM for M3) and the test
+metrics. A specific view can be linked with `index.html?dataset=synthetic&model=m3_swin_sam`.
+
+**Streamlit app.** `make app` (or `poetry run streamlit run app/streamlit_app.py`) opens an explorer with:
+
+- new volumes from any run's evaluated checkpoint, for any latent seed and an edge of 64, 96 or 128
+  voxels, optionally periodic; or the stored evaluation volumes;
+- a 3D surface view, section sliders and the descriptors of the current volume (φ, S₂ and L MAE, per plane);
+- S₂ and L curves of several models against the dataset's reference;
+- the test-metric table of the dataset, including the repeat runs;
+- an RVE download (zip with VTI, MetaImage, Abaqus, NumPy and/or TIFF files plus JSON metadata).
+
+Generating needs the local checkpoints (`models/`, not versioned); without them the app shows the
+volumes from the viewer export. The app's dependencies are in the Poetry group `app`. `.streamlit/config.toml`
+turns off Streamlit's file watcher, which stalls when it inspects `torch`.
 
 ## Exporting RVEs for FEM / FFT homogenization
 

@@ -1,0 +1,7 @@
+# Streamlit settings for app/streamlit_app.py (read when `streamlit run` is started from the repository root).
+[server]
+# The file watcher inspects every imported module and stalls on torch.classes; edits need a manual rerun.
+fileWatcherType = "none"
+
+[browser]
+gatherUsageStats = false
