@@ -84,10 +84,11 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
   <header>
     <div class="eyebrow" id="eyebrow">Loading volumes…</div>
     <h1>SliceGAN Volume Viewer</h1>
-    <p class="lede">Generated 64³ microstructures from one 2D micrograph. Drag the 3D view to rotate and scroll to zoom. Move the section sliders to step through the volume along each axis, and compare with a 64×64 crop of the training image.</p>
+    <p class="lede">Generated 64³ microstructures from one 2D micrograph. Drag the 3D view to rotate and scroll to zoom. Move the section sliders to step through the volume along each axis, and compare with a 64×64 crop of the model's training image (the Otsu map, or the SAM map for M3). "Run 2" models are second training runs with a different seed; "Swin at 128 px" is the variant of report Section 5.7.</p>
   </header>
 
   <div class="controls">
+    <div class="group"><span class="group-label" id="ds-label">Dataset</span><div class="seg" id="datasets" role="group" aria-labelledby="ds-label"></div></div>
     <div class="group"><span class="group-label" id="model-label">Model</span><div class="seg" id="models" role="group" aria-labelledby="model-label"></div></div>
     <div class="group"><span class="group-label" id="seed-label">Latent seed</span><div class="seg" id="seeds" role="group" aria-labelledby="seed-label"></div></div>
   </div>
@@ -110,7 +111,7 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
         <div class="section"><div class="section-head"><b>xy</b><span id="lab-z"></span></div><canvas id="sec-xy" width="64" height="64"></canvas><input type="range" id="sl-z" min="0" max="63" value="32" aria-label="xy section, z index"></div>
         <div class="section"><div class="section-head"><b>xz</b><span id="lab-y"></span></div><canvas id="sec-xz" width="64" height="64"></canvas><input type="range" id="sl-y" min="0" max="63" value="32" aria-label="xz section, y index"></div>
         <div class="section"><div class="section-head"><b>yz</b><span id="lab-x"></span></div><canvas id="sec-yz" width="64" height="64"></canvas><input type="range" id="sl-x" min="0" max="63" value="32" aria-label="yz section, x index"></div>
-        <div class="section"><div class="section-head"><b>2D training</b><span id="lab-crop"></span></div><canvas id="sec-train" width="64" height="64"></canvas><div class="ref-row"><span class="hint" id="train-phi"></span><button class="btn" id="new-crop" type="button">Another crop</button></div></div>
+        <div class="section"><div class="section-head"><b id="train-title">2D training</b><span id="lab-crop"></span></div><canvas id="sec-train" width="64" height="64"></canvas><div class="ref-row"><span class="hint" id="train-phi"></span><button class="btn" id="new-crop" type="button">Another crop</button></div></div>
       </div>
       <div class="legend"><span><i class="sw" style="background:var(--phase)"></i>inclusion phase</span><span><i class="sw" style="background:var(--matrix)"></i>matrix</span><span>z points up in the xz and yz sections</span></div>
     </section>
@@ -126,7 +127,7 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
 (() => {
   const L = 64, N = L * L * L;
   const $ = (id) => document.getElementById(id);
-  const state = { data: null, model: null, seed: null, vol: null, train: null, crop: [0, 0], z: 32, y: 32, x: 32 };
+  const state = { all: null, data: null, model: null, seed: null, vol: null, train: null, trainKey: null, crop: [0, 0], z: 32, y: 32, x: 32 };
 
   // ---------- data
   function unpack(b64, n) {
@@ -162,14 +163,25 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
     drawSection($("sec-yz"), (r, c) => at(v, L - 1 - r, c, x));       // rows = z (up), cols = y
     $("lab-z").textContent = `z = ${z}`; $("lab-y").textContent = `y = ${y}`; $("lab-x").textContent = `x = ${x}`;
   }
+  function trainMap() { return state.data.train[state.trainKey] || state.data.train.raw; }
   function drawTrain() {
-    const t = state.data.train, [h, w] = t.shape, [r0, c0] = state.crop;
+    const t = trainMap(), [h, w] = t.shape, [r0, c0] = state.crop;
     drawSection($("sec-train"), (r, c) => state.train[(r0 + r) * w + (c0 + c)]);
+    $("train-title").textContent = state.trainKey === "sam" ? "2D · SAM" : "2D · Otsu";
     $("lab-crop").textContent = `row ${r0}, col ${c0}`;
     $("train-phi").textContent = `φ of full image ${t.phi.toFixed(3)}`;
   }
+  function setTrain(key) {
+    const k = state.data.train[key] ? key : "raw";
+    if (k === state.trainKey && state.train) return;
+    state.trainKey = k;
+    const t = state.data.train[k], [h, w] = t.shape;
+    state.train = unpack(t.bits, h * w);
+    state.crop = [Math.min(state.crop[0], h - L), Math.min(state.crop[1], w - L)];
+    drawTrain();
+  }
   function newCrop() {
-    const [h, w] = state.data.train.shape;
+    const [h, w] = trainMap().shape;
     state.crop = [Math.floor(Math.random() * (h - L)), Math.floor(Math.random() * (w - L))];
     drawTrain();
   }
@@ -322,6 +334,7 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
     state.model = id;
     const model = state.data.models.find((m) => m.id === id);
     document.querySelectorAll("#models button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.id === id)));
+    setTrain(model.input);
     const seeds = $("seeds"); seeds.innerHTML = "";
     model.volumes.forEach((v) => {
       const b = document.createElement("button"); b.type = "button"; b.dataset.seed = v.seed; b.textContent = v.seed;
@@ -329,25 +342,36 @@ input[type="range"] { width: 100%; accent-color: var(--phase); }
     });
     selectSeed(model.volumes.some((v) => v.seed === state.seed) ? state.seed : model.volumes[0].seed);
   }
-  function build(data) {
-    state.data = data;
-    const [h, w] = data.train.shape;
-    state.train = unpack(data.train.bits, h * w);
+  function selectDataset(name) {
+    const prevModel = state.model;
+    state.data = state.all.datasets.find((d) => d.dataset === name);
+    const data = state.data;
+    document.querySelectorAll("#datasets button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.name === name)));
     const um = data.pixel_size_um ? ` · ${data.pixel_size_um} µm per voxel` : "";
-    $("eyebrow").textContent = `${data.dataset.replace("microlib_", "MicroLib ")} · 64³ voxels${um}`;
-    const bar = $("models");
+    $("eyebrow").textContent = `${label(data.dataset)} · 64³ voxels${um} · ${data.models.length} models`;
+    const bar = $("models"); bar.innerHTML = "";
     data.models.forEach((m) => {
-      const b = document.createElement("button"); b.type = "button"; b.dataset.id = m.id;
-      b.innerHTML = m.label + (m.status === "ready" ? "" : ' <span class="chip">training</span>');
-      b.disabled = m.status !== "ready"; b.addEventListener("click", () => selectModel(m.id));
-      bar.appendChild(b);
+      const b = document.createElement("button"); b.type = "button"; b.dataset.id = m.id; b.textContent = m.label;
+      b.addEventListener("click", () => selectModel(m.id)); bar.appendChild(b);
     });
-    const pending = data.models.filter((m) => m.status !== "ready").map((m) => m.label);
-    if (pending.length) { $("notice").hidden = false; $("notice").textContent = `${pending.join(" and ")} ${pending.length > 1 ? "are" : "is"} still training. This page will be updated with their volumes when training ends.`; }
-    const first = data.models.find((m) => m.status === "ready");
-    state.crop = [Math.floor((h - L) / 2), Math.floor((w - L) / 2)];
-    applyTheme(); drawTrain(); placePlanes();
-    if (first) selectModel(first.id);
+    state.trainKey = null; state.train = null;
+    const t = data.train.raw; state.crop = [Math.floor((t.shape[0] - L) / 2), Math.floor((t.shape[1] - L) / 2)];
+    const want = new URLSearchParams(location.search).get("model");
+    const keep = data.models.find((m) => m.id === prevModel) || data.models.find((m) => m.id === want) || data.models[0];
+    if (keep) selectModel(keep.id);
+  }
+  const label = (name) => name === "synthetic" ? "Synthetic (exact ground truth)" : name.replace("microlib_", "MicroLib ");
+  function build(all) {
+    // Older single-dataset exports: wrap them so the page still works
+    state.all = all.datasets ? all : { datasets: [{ ...all, train: all.train.bits ? { raw: all.train } : all.train }] };
+    const bar = $("datasets");
+    state.all.datasets.forEach((d) => {
+      const b = document.createElement("button"); b.type = "button"; b.dataset.name = d.dataset; b.textContent = label(d.dataset);
+      b.addEventListener("click", () => selectDataset(d.dataset)); bar.appendChild(b);
+    });
+    applyTheme(); placePlanes();
+    const want = new URLSearchParams(location.search).get("dataset");
+    selectDataset((state.all.datasets.find((d) => d.dataset === want) || state.all.datasets[0]).dataset);
     if (view3d) view3d.resize();
   }
 

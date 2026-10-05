@@ -38,7 +38,7 @@ help:
 	@echo "train-all          all seven models in dependency order"
 	@echo "generate           128 volumes per model + metrics (metrics.yaml, curves.npz)"
 	@echo "eval               generate + metrics.csv, comparison vs M1, figures, viewer data"
-	@echo "viewer             export 4 volumes per model for reports/viewer/index.html"
+	@echo "viewer             export 4 volumes per run (both datasets) for reports/viewer/index.html"
 	@echo "export-rve         RVEs for FEM/FFT codes (MODEL=m4_ensemble SIZE=128 SEEDS=\"0 1 2\" FORMATS=\"vti mhd inp\" PERIODIC=1)"
 	@echo "test               run pytest"
 	@echo "report-pdf         reports/report(_es).md -> PDF (pandoc + headless Edge)"
@@ -94,10 +94,10 @@ generate:
 
 eval: generate
 	$(PY) -m src.visualization.visualize --configs $(CONFIGS) $(DATA_ARG)
-	$(PY) -m src.visualization.export_viewer --configs $(CONFIGS) $(DATA_ARG)
+	$(PY) -m src.visualization.export_viewer
 
 viewer:
-	$(PY) -m src.visualization.export_viewer --configs $(CONFIGS) $(DATA_ARG)
+	$(PY) -m src.visualization.export_viewer
 
 test:
 	$(PY) -m pytest
