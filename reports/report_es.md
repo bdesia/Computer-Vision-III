@@ -179,7 +179,11 @@ esquema WGAN-GP (Adam 1e-4, β = (0,9, 0,99), λ_GP = 10, 5 pasos del crítico p
 regla de lotes del Algoritmo 1 de SliceGAN: el crítico ve las 64 rebanadas por eje de m_D = 1 volumen y el
 paso del generador usa m_G = 2 m_D volúmenes. Agregados: ramas de crítico (crítico único o ensamble CNN +
 Swin), pérdida hinge, aumentación diferenciable de las entradas del crítico (DiffAug: traslación, cutout,
-rotaciones de 90° y reflexiones), arranque en caliente del generador y selección de checkpoints.
+rotaciones de 90° y reflexiones), arranque en caliente del generador y selección de checkpoints. Las
+traslaciones (hasta ±8 px) y las posiciones del cutout no se alinean a propósito con la grilla de parches de
+4 px de Swin-T: los recortes reales también se toman en desplazamientos arbitrarios, y un desplazamiento no
+alineado cambia el contenido de cada parche, de modo que el crítico no puede aprovechar la posición de un rasgo
+dentro de un parche.
 
 **Selección de checkpoints y protocolo de evaluación.** Después de cada época (100 pasos del generador), el
 generador produce 16 volúmenes con semillas reservadas (1000–1015), y se conserva la época con menor

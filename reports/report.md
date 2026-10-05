@@ -166,7 +166,9 @@ network factory and the exact layer lists of `run_slicegan.py`, and reuses its g
 rule: the critic sees all 64 slices per axis of m_D = 1 volume, the generator step uses m_G = 2 m_D
 volumes. Additions: critic branches (single critic or CNN + Swin ensemble), hinge loss, differentiable
 augmentation of critic inputs (DiffAug: translation, cutout, 90° rotations/flips), generator warm
-start, and checkpoint selection.
+start, and checkpoint selection. Translations (up to ±8 px) and cutout positions are deliberately not
+aligned to Swin-T's 4 px patch grid: the real crops are taken at arbitrary pixel offsets too, and unaligned
+shifts change the content of every patch, so the critic cannot exploit where a feature falls within a patch.
 
 **Checkpoint selection and evaluation protocol.** After every epoch (100 generator steps) the generator
 produces 16 volumes from held-out seeds (1000–1015), and the epoch with the lowest S₂ MAE against the
