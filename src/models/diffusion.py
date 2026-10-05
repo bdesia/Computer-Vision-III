@@ -56,9 +56,13 @@ def modulate(x: torch.Tensor, shift: torch.Tensor, scale: torch.Tensor) -> torch
 class DiTBlock(nn.Module):
     """Transformer block with adaLN-Zero conditioning on the timestep."""
 
-    def __init__(self, dim: int, heads: int, mlp_ratio: float = 4.0):
+    def __init__(self, dim: int, heads: int, mlp_ratio: float = 4.0, qk_norm: bool = False):
         super().__init__()
         self.heads = heads
+        # QK-norm (LayerNorm on queries and keys per head) bounds the attention logits; without it the first M6
+        # run diverged after ~5k steps under bf16 autocast
+        self.q_norm = nn.LayerNorm(dim // heads, eps=1e-6) if qk_norm else nn.Identity()
+        self.k_norm = nn.LayerNorm(dim // heads, eps=1e-6) if qk_norm else nn.Identity()
         self.norm1 = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.qkv = nn.Linear(dim, 3 * dim)
         self.proj = nn.Linear(dim, dim)
@@ -74,7 +78,7 @@ class DiTBlock(nn.Module):
         n, l, d = x.shape
         h = modulate(self.norm1(x), sh1, sc1)
         q, k, v = self.qkv(h).reshape(n, l, 3, self.heads, d // self.heads).permute(2, 0, 3, 1, 4)
-        h = F.scaled_dot_product_attention(q, k, v).transpose(1, 2).reshape(n, l, d)
+        h = F.scaled_dot_product_attention(self.q_norm(q), self.k_norm(k), v).transpose(1, 2).reshape(n, l, d)
         x = x + g1[:, None] * self.proj(h)
         return x + g2[:, None] * self.mlp(modulate(self.norm2(x), sh2, sc2))
 
@@ -83,7 +87,7 @@ class DiT(nn.Module):
     """Unconditional DiT denoiser for (N, C, S, S) images; returns the predicted noise, same shape."""
 
     def __init__(self, img_size: int = 64, patch: int = 4, in_ch: int = 1, dim: int = 384, depth: int = 8,
-                 heads: int = 6, mlp_ratio: float = 4.0):
+                 heads: int = 6, mlp_ratio: float = 4.0, qk_norm: bool = False):
         super().__init__()
         if img_size % patch:
             raise ValueError(f"img_size {img_size} is not a multiple of patch {patch}")
@@ -92,7 +96,7 @@ class DiT(nn.Module):
         self.embed = nn.Conv2d(in_ch, dim, kernel_size=patch, stride=patch)
         self.register_buffer("pos", sincos_pos_embed_2d(dim, self.grid)[None], persistent=False)
         self.t_mlp = nn.Sequential(nn.Linear(256, dim), nn.SiLU(), nn.Linear(dim, dim))
-        self.blocks = nn.ModuleList(DiTBlock(dim, heads, mlp_ratio) for _ in range(depth))
+        self.blocks = nn.ModuleList(DiTBlock(dim, heads, mlp_ratio, qk_norm) for _ in range(depth))
         self.norm = nn.LayerNorm(dim, elementwise_affine=False, eps=1e-6)
         self.ada = nn.Sequential(nn.SiLU(), nn.Linear(dim, 2 * dim))
         self.out = nn.Linear(dim, patch * patch * in_ch)
@@ -115,7 +119,8 @@ class DiT(nn.Module):
 
 def build_dit(cfg: dict) -> DiT:
     d = cfg["model"]["dit"]
-    return DiT(cfg["img_size"], d["patch"], 1, d["dim"], d["depth"], d["heads"], d.get("mlp_ratio", 4.0))
+    return DiT(cfg["img_size"], d["patch"], 1, d["dim"], d["depth"], d["heads"], d.get("mlp_ratio", 4.0),
+               d.get("qk_norm", False))
 
 
 # ----------------------------------------------------------------------------- noise schedule and DDIM
@@ -139,11 +144,20 @@ def ddim_timesteps(timesteps: int, steps: int) -> list[int]:
     return sorted({int(round(v)) for v in np.linspace(0, timesteps - 1, steps)}, reverse=True)
 
 
-def ddim_step(x: torch.Tensor, eps: torch.Tensor, ab_t: torch.Tensor, ab_prev: torch.Tensor) -> torch.Tensor:
-    """Deterministic DDIM update (eta = 0) with the x0 prediction clipped to the data range [-1, 1]."""
+def ddim_step(x: torch.Tensor, eps: torch.Tensor, ab_t: torch.Tensor, ab_prev: torch.Tensor, eta: float = 0.0,
+              generator: torch.Generator | None = None) -> torch.Tensor:
+    """DDIM update with the x0 prediction clipped to the data range [-1, 1].
+
+    eta = 0 is deterministic DDIM; eta = 1 re-injects DDPM-level noise, which lets the per-axis predictions of
+    multi-plane sampling correct each other over the following steps.
+    """
     x0 = ((x - (1 - ab_t).sqrt() * eps) / ab_t.sqrt()).clamp(-1, 1)
     eps = (x - ab_t.sqrt() * x0) / (1 - ab_t).sqrt()  # noise consistent with the clipped x0
-    return ab_prev.sqrt() * x0 + (1 - ab_prev).sqrt() * eps
+    if eta == 0:
+        return ab_prev.sqrt() * x0 + (1 - ab_prev).sqrt() * eps
+    sigma = eta * ((1 - ab_prev) / (1 - ab_t) * (1 - ab_t / ab_prev)).clamp(min=0).sqrt()
+    z = torch.randn(x.shape, device=x.device, generator=generator)
+    return ab_prev.sqrt() * x0 + (1 - ab_prev - sigma**2).clamp(min=0).sqrt() * eps + sigma * z
 
 
 # ----------------------------------------------------------------------------- sampling
@@ -175,7 +189,7 @@ def predict_eps_volume(model: DiT, vol: torch.Tensor, t: int, axes: tuple[str, .
 
 @torch.no_grad()
 def sample_volume(model: DiT, alpha_bar: torch.Tensor, size: int, seed: int, steps: int = 50, mode: str = "average",
-                  chunk: int = 64, device=None) -> np.ndarray:
+                  chunk: int = 64, device=None, eta: float = 0.0) -> np.ndarray:
     """One {0, 1} volume of edge `size` by multi-plane DDIM sampling.
 
     mode "average": every step averages the predictions along z, y and x (3 model passes per step);
@@ -192,7 +206,7 @@ def sample_volume(model: DiT, alpha_bar: torch.Tensor, size: int, seed: int, ste
         axes = AXES if mode == "average" else (AXES[i % 3],)
         eps = predict_eps_volume(model, x, t, axes, chunk)
         ab_prev = ab[ts[i + 1]] if i + 1 < len(ts) else torch.tensor(1.0, device=device)
-        x = ddim_step(x, eps, ab[t], ab_prev)
+        x = ddim_step(x, eps, ab[t], ab_prev, eta, gen)
     return (x > 0).to(torch.uint8).cpu().numpy()
 
 
@@ -216,14 +230,16 @@ def sample_slices(model: DiT, alpha_bar: torch.Tensor, n: int, seed: int, steps:
 class DiffusionVolumeGenerator(nn.Module):
     """Wraps a trained DiT so the evaluation code can call `sample_volume(seed)` like a generator."""
 
-    def __init__(self, model: DiT, alpha_bar: torch.Tensor, size: int, steps: int, mode: str, chunk: int):
+    def __init__(self, model: DiT, alpha_bar: torch.Tensor, size: int, steps: int, mode: str, chunk: int,
+                 eta: float = 0.0):
         super().__init__()
         self.model = model
         self.register_buffer("alpha_bar", alpha_bar, persistent=False)
-        self.size, self.steps, self.mode, self.chunk = size, steps, mode, chunk
+        self.size, self.steps, self.mode, self.chunk, self.eta = size, steps, mode, chunk, eta
 
     def sample_volume(self, seed: int) -> np.ndarray:
-        return sample_volume(self.model, self.alpha_bar, self.size, seed, self.steps, self.mode, self.chunk)
+        return sample_volume(self.model, self.alpha_bar, self.size, seed, self.steps, self.mode, self.chunk,
+                             eta=self.eta)
 
 
 def build_volume_generator(cfg: dict, state_dict: dict, device) -> DiffusionVolumeGenerator:
@@ -233,4 +249,5 @@ def build_volume_generator(cfg: dict, state_dict: dict, device) -> DiffusionVolu
     model.load_state_dict(state_dict)
     model = model.to(device).eval()
     return DiffusionVolumeGenerator(model, cosine_alpha_bar(d["timesteps"]), cfg["volume_size"],
-                                    d["sample_steps"], d["sample_mode"], d.get("sample_chunk", 64)).to(device)
+                                    d["sample_steps"], d["sample_mode"], d.get("sample_chunk", 64),
+                                    d.get("sample_eta", 0.0)).to(device)

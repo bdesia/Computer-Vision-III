@@ -120,6 +120,10 @@ def _train(cfg: dict, run_dir: Path, tracker: Tracker) -> None:
             with torch.autocast("cuda", dtype=torch.bfloat16, enabled=device.type == "cuda"):
                 pred = model(q_sample(x0, t, noise, alpha_bar), t)
             loss = F.mse_loss(pred.float(), noise)
+            if not torch.isfinite(loss):  # never let one bad batch poison the weights (and the EMA)
+                log.warning("Non-finite loss at step %d; batch skipped", step)
+                opt.zero_grad(set_to_none=True)
+                continue
             lr = tc["lr"] * min(1.0, (step + 1) / warmup) if warmup else tc["lr"]
             for g in opt.param_groups:
                 g["lr"] = lr

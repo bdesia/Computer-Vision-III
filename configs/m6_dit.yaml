@@ -16,6 +16,7 @@ model:
     depth: 8
     heads: 6
     mlp_ratio: 4.0         # 21.8 M parameters
+    qk_norm: true          # run 1 (no QK-norm, lr 1e-4) diverged after ~5.6k steps
     timesteps: 1000        # cosine schedule, epsilon prediction
     sample_steps: 50       # DDIM steps for evaluation volumes
     sample_mode: average   # average | cycle (one axis per step)
@@ -26,7 +27,7 @@ data:
 
 train:
   batch: 128
-  lr: 1.0e-4
+  lr: 5.0e-5
   warmup_steps: 1000
   ema_decay: 0.999
   grad_clip: 1.0
