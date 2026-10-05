@@ -8,22 +8,22 @@ Las microestructuras tridimensionales son necesarias para calcular propiedades e
 ejemplo, como elementos de volumen representativos para análisis por elementos finitos), pero la
 adquisición 3D (micro-CT, FIB-SEM) es costosa y a menudo no está disponible, mientras que las micrografías
 2D son baratas, rápidas y en general de mayor resolución. Este proyecto genera microestructuras 3D de dos
-fases a partir de una única micrografía 2D con SliceGAN y estudia si los Vision Transformers la mejoran,
+fases a partir de una única micrografía 2D con SliceGAN (Kench & Cooper, 2021) y estudia si los Vision Transformers la mejoran,
 ya sea como crítico adversarial o como etapa previa de segmentación.
 
 ### 1.1 Antecedentes: SliceGAN
 
 **El problema.** Una micrografía 2D de un material contiene, estadísticamente, buena parte de la
-información de su estructura 3D: en un material *isótropo* (sin dirección preferencial), todo corte plano
+información de su estructura 3D: en un material isótropo (sin dirección preferencial), todo corte plano
 del volumen tiene la misma estadística (fracciones de fase, tamaños y formas de los rasgos, correlaciones
 espaciales) que cualquier otro. La tarea es entonces producir volúmenes 3D cuyas secciones 2D sean
 estadísticamente indistinguibles de la micrografía. Los métodos clásicos de reconstrucción optimizan un
-volumen 3D para ajustar descriptores estadísticos elegidos (por ejemplo, la correlación de dos puntos); son
+volumen 3D para ajustar descriptores estadísticos elegidos (por ejemplo, la correlación de dos puntos), son
 lentos (horas para 10⁶ vóxeles) y solo reproducen los descriptores que se les pidió ajustar.
 
 **Redes generativas adversariales.** Una GAN entrena dos redes enfrentadas: un *generador* G que transforma
 ruido aleatorio en muestras, y un *discriminador* (crítico) D que intenta distinguir las muestras generadas
-de las reales. G se actualiza para engañar a D; en el equilibrio, la distribución generada coincide con la
+de las reales. G se actualiza para engañar a D. En el equilibrio, la distribución generada coincide con la
 real. Las GAN aprenden la estadística directamente de los datos en lugar de descriptores elegidos a mano y,
 una vez entrenadas, generan muestras nuevas en segundos.
 
@@ -44,28 +44,30 @@ paso de corte:
 
 ![Entrenamiento de SliceGAN](figures/slicegan_schematic.png)
 
-El entrenamiento usa la pérdida de Wasserstein con penalización de gradiente (WGAN-GP; Gulrajani et al.,
+El entrenamiento en la versión original usa la pérdida de Wasserstein con penalización de gradiente (WGAN-GP; Gulrajani et al.,
 2017), en la que D es un *crítico* no acotado que estima la distancia de Wasserstein entre rebanadas reales
-y generadas, con 5 actualizaciones del crítico por cada actualización del generador. El Algoritmo 1 del
-artículo le muestra a D las 64 rebanadas por dirección de cada volumen generado y usa un lote del generador
+y generadas, con 5 actualizaciones del crítico por cada actualización del generador. Usar WGAN implica
+que esa distancia sólo es válida si el crítico es una función
+1-Lipschitz (norma del gradiente respecto de la entrada ≤ 1). En lugar de recortar los pesos como la WGAN
+original, la GP impone la restricción de forma suave: se interpola al azar entre una rebanada real x y una
+generada x̃, x̂ = εx + (1−ε)x̃ con ε ~ U[0, 1], y se suma a la pérdida del crítico el término
+λ(‖∇D(x̂)‖₂ − 1)², con λ = 10. El discriminador ve las 64 rebanadas por dirección de cada volumen generado y usa un lote del generador
 del doble del lote del crítico (m_G = 2 m_D), configuración que los autores encontraron más eficiente.
 
 **Diseño del generador: densidad de información uniforme.** Las primeras versiones de SliceGAN producían
 peor calidad cerca de los bordes del volumen. La causa es la convolución transpuesta: un vóxel cerca del
 borde de la salida recibe contribuciones de menos posiciones del kernel que uno central, de modo que la
 información queda distribuida de forma desigual. En microestructuras, donde los bordes importan tanto como
-el centro, los autores derivan reglas para el tamaño de kernel k, el paso s y el relleno p (s < k,
+el centro, los autores derivan reglas para el tamaño de kernel k, el stride s y el padding p (s < k,
 k mod s = 0, p ≥ k − s) y usan {k, s, p} = {4, 2, 2}. Además, dan al latente z un tamaño espacial de 4 en
-lugar de 1, de modo que la primera capa ya aprende salidas de kernel superpuestas; como consecuencia, se
-pueden generar volúmenes mayores que 64³ después del entrenamiento simplemente agrandando z. El código
-publicado (usado aquí sin cambios) reemplaza la última convolución transpuesta por un sobremuestreo +
-convolución ("resize-convolution") para evitar artefactos de tablero de ajedrez. El crítico es una CNN 2D
+lugar de 1, de modo que la primera capa ya aprende salidas de kernel superpuestas. Como consecuencia, se
+pueden generar volúmenes mayores que 64³ después del entrenamiento simplemente agrandando z. Por su parte, el crítico es una CNN 2D
 simple de cinco convoluciones con paso (rebanada de 64 × 64 → un puntaje).
 
 **Alcance y límites.** SliceGAN reproduce la estadística de la micrografía sin descriptores elegidos a
 mano, entrena en pocas horas en una GPU y genera volúmenes en segundos. Fue validado contra datos 3D reales
 de un electrodo de batería y luego aplicado a 87 materiales de la biblioteca MicroLib (Kench et al., 2022).
-Sus supuestos principales son la isotropía (los materiales anisótropos necesitan dos o tres micrografías
+En este trabajo, se limita a casos isótropos (los materiales anisótropos necesitan dos o tres micrografías
 perpendiculares y críticos separados) y un campo de visión representativo del material.
 
 ### 1.2 Antecedentes: Swin-T y SAM, y dónde entran en el pipeline
@@ -92,11 +94,11 @@ entrenado con mil millones de máscaras. En modo automático, una grilla de punt
 cada objeto, sin entrenamiento adicional (zero-shot).
 
 **Cómo se incluye SAM.** SliceGAN necesita una micrografía segmentada (una etiqueta por fase) como dato de
-entrenamiento; la línea base la obtiene con un umbral global de nivel de gris (Otsu). SAM se usa como
-*etapa previa* alternativa para este paso de segmentación, y el resto del pipeline no cambia:
+entrenamiento. El enfoque baseline la obtiene con un umbral global de nivel de gris obtenido mediante el método de Otsu. Este enfoque funciona bien para casos bifásicos, aunque puede extenderse a multifásicos. En este trabajo, SAM se usa como
+etapa previa alternativa para este paso de segmentación, y el resto del pipeline no cambia:
 
-1. SAM ViT-B (`facebook/sam-vit-base`, sin ajuste fino) se ejecuta sobre teselas superpuestas de 256 px de
-   la micrografía con una grilla de 32 × 32 puntos por tesela (una sola pasada sobre la imagen completa
+1. SAM ViT-B (`facebook/sam-vit-base`, sin ajuste fino) se ejecuta sobre parcelas superpuestas de 256 px de
+   la micrografía con una grilla de 32 × 32 puntos por parcela (una sola pasada sobre la imagen completa
    pierde la mayoría de las islas pequeñas);
 2. las máscaras superpuestas (IoU > 0,3) se fusionan;
 3. cada grupo fusionado se etiqueta como inclusión o matriz según su nivel de gris medio (una división en
@@ -105,13 +107,13 @@ entrenamiento; la línea base la obtiene con un umbral global de nivel de gris (
 
 ![Segmentación con SAM](figures/sam_frontend.png)
 
-### 1.3 Preguntas de investigación
+### 1.3 Preguntas del proyecto:
 
 - **PI1 — crítico ViT.** ¿Reemplazar el discriminador CNN de SliceGAN por un Swin Transformer (Swin-T)
   mejora las microestructuras generadas? (M1 vs M2, con una ablación M1 + DiffAug)
 - **PI2 — segmentación con SAM.** ¿Segmentar la micrografía con SAM, en lugar de un umbral global, las
   mejora? (M2 vs M3)
-- **PI3 — ViT como crítico adicional (extensión).** ¿Agregar un crítico Swin-T preentrenado junto a la CNN
+- **PI3 — ViT como crítico adicional.** ¿Agregar un crítico Swin-T preentrenado junto a la CNN
   de SliceGAN, como en Vision-aided GAN (Kumari et al., 2022), ayuda, ya sea desde cero (M4) o como etapa
   de ajuste fino de un SliceGAN ya entrenado (M5, comparado contra M1 entrenado los mismos pasos extra)?
 
@@ -123,15 +125,19 @@ referencia 3D.
 
 ![Pipeline](figures/pipeline.png)
 
-**Datos.** El caso principal es la entrada 000210 de MicroLib (biblioteca de micrografías DoITPoMS): una
+**Datos.** En el caso isótropo, el set de entrenamiento es una sola micrografía 2D, y la misma imagen sirve de referencia para los tres planos (xy, xz, yz). Para materiales anisótropos se pueden dar hasta 3 imágenes, una por plano ortogonal, y cada dirección tiene su propio crítico.
+
+En este trabajo, el caso principal es la entrada `000210` de MicroLib (biblioteca de micrografías DoITPoMS): una
 micrografía óptica de islas oscuras en una matriz clara, de 437 × 800 px tras quitar la barra de escala,
 0,687 µm/px. Se eligió al azar entre las entradas de dos fases de MicroLib con una diferencia de nivel de
 gris entre fases ≥ 80 y se aceptó tras un control de isotropía (cociente de longitudes de correlación x/y
-de 1,11). Una micrografía sintética (discos sin superposición, φ = 0,25, renderizada con desenfoque y
-ruido, con máscara de referencia exacta) se usa como control.
+de 1,11). 
+
+El segundo caso de estudio es una micrografía sintética (discos sin superposición, φ = 0,25, renderizada con desenfoque y
+ruido, con máscara de referencia exacta). A diferencia del caso anterior, se conoce la máscara de fases exacta, de modo que tanto la segmentación (Otsu o SAM) como los descriptores de referencia (φ, S₂) se miden sin error de anotación.
 
 **Segmentación (etapa previa).** M1, M2, M4 y M5 entrenan sobre un mapa de etiquetas de Otsu (φ = 0,232).
-M3 entrena sobre un mapa de SAM: SAM ViT-B zero-shot sobre teselas de 256 px, máscaras superpuestas
+M3 entrena sobre un mapa de SAM: SAM ViT-B zero-shot sobre parcelas de 256 px, máscaras superpuestas
 fusionadas (IoU > 0,3) y grupos cuyo gris medio se aparta del de la matriz etiquetados como inclusiones
 (φ = 0,217).
 
@@ -172,15 +178,19 @@ Entrenado en una NVIDIA RTX A2000 (12 GB).
 - SAM: `facebook/sam-vit-base` a través del pipeline de generación de máscaras de `transformers`, zero-shot.
 
 **Integración de SliceGAN.** El repositorio original es un submódulo de git (`external/SliceGAN`, MIT) y no
-se modifica. `src/models/slicegan_wrapper.py` construye el generador y el crítico CNN con la fábrica de
+se modifica.
+
+-  `src/models/slicegan_wrapper.py` construye el generador y el crítico CNN con la fábrica de
 redes original y las listas de capas exactas de `run_slicegan.py`, y reutiliza su penalización de
-gradiente. `src/models/train.py` es una bifurcación del bucle de entrenamiento original con el mismo
+gradiente. 
+- `src/models/train.py` es una bifurcación del bucle de entrenamiento original con el mismo
 esquema WGAN-GP (Adam 1e-4, β = (0,9, 0,99), λ_GP = 10, 5 pasos del crítico por paso del generador) y la
-regla de lotes del Algoritmo 1 de SliceGAN: el crítico ve las 64 rebanadas por eje de m_D = 1 volumen y el
-paso del generador usa m_G = 2 m_D volúmenes. Agregados: ramas de crítico (crítico único o ensamble CNN +
+regla de lotes de SliceGAN: el crítico ve las 64 rebanadas por eje de m_D = 1 volumen y el
+paso del generador usa m_G = 2 m_D volúmenes. 
+- Agregados: ramas de crítico (crítico único o ensamble CNN +
 Swin), pérdida hinge, aumentación diferenciable de las entradas del crítico (DiffAug: traslación, cutout,
-rotaciones de 90° y reflexiones), arranque en caliente del generador y selección de checkpoints. Las
-traslaciones (hasta ±8 px) y las posiciones del cutout no se alinean a propósito con la grilla de parches de
+rotaciones de 90° y reflexiones), warm-start del generador y selección de checkpoints. 
+- Las traslaciones (hasta ±8 px) y las posiciones del cutout no se alinean a propósito con la grilla de parches de
 4 px de Swin-T: los recortes reales también se toman en desplazamientos arbitrarios, y un desplazamiento no
 alineado cambia el contenido de cada parche, de modo que el crítico no puede aprovechar la posición de un rasgo
 dentro de un parche.
@@ -208,11 +218,18 @@ del latente de SliceGAN con un recorte de 2 vóxeles, que resultó ser el perío
 discrepancia entre caras opuestas con la discrepancia entre rebanadas interiores vecinas (cociente 1,0–2,0
 frente a 8–13 sin mosaico).
 
-**Módulos principales.** `src/data/make_dataset.py` (descarga, recorte, Otsu, recortes),
-`src/features/sam_segment.py` (segmentación con SAM), `src/features/descriptors.py` (φ, S₂, L),
-`src/models/discriminator_swin.py` (críticos Swin), `src/models/train.py`, `src/models/generate.py`
-(volúmenes + métricas), `src/visualization/visualize.py` (figuras, `metrics.csv`), un visor interactivo de
-volúmenes (`reports/viewer/`) y el notebook de análisis exploratorio `notebooks/00_eda.ipynb`.
+**Módulos principales.**
+
+- `src/data/make_dataset.py`: descarga, recorte, Otsu, recortes.
+- `src/features/sam_segment.py`: segmentación con SAM.
+- `src/features/descriptors.py`: φ, S₂, L.
+- `src/models/discriminator_swin.py`: críticos Swin.
+- `src/models/train.py`.
+- `src/models/generate.py`: volúmenes + métricas.
+- `src/visualization/visualize.py`: figuras, `metrics.csv`.
+- `reports/viewer/`: un visor interactivo de
+volúmenes.
+- `notebooks/00_eda.ipynb`: notebook de EDA.
 
 ## 4. Evaluación
 
@@ -264,9 +281,6 @@ Escalas de referencia: en el dataset sintético, la segmentación de Otsu frente
 `S₂ MAE = 0,0021`. Volúmenes aleatorios no correlacionados de 64³ con la `φ` correcta de MicroLib 000210
 dan `S₂ MAE = 0,042` (`err = 0,42`) y `L MAE = 0,077` (`err = 0,89`), un piso que cualquier modelo útil
 debe superar.
-
-No se usan FID ni SSIM 3D (requieren una referencia volumétrica), y no se reporta exactitud de
-clasificación.
 
 ## 5. Resultados y ejemplos
 
@@ -508,7 +522,7 @@ contrario se quedaba sin memoria de GPU. Valores: `reports/metrics_seeds_microli
 
 ## 6. Conclusiones y trabajo futuro
 
-**Respuestas a las preguntas de investigación** (dos datasets, 128 volúmenes de prueba por modelo,
+**Respuestas a las preguntas del proyecto** (dos datasets, 128 volúmenes de prueba por modelo,
 intervalos bootstrap; dos corridas de entrenamiento de M1, M2 y M4 en MicroLib):
 
 - **PI1 — Swin-T en lugar del crítico CNN: no.** Entrenado con la configuración WGAN-GP de SliceGAN, un
@@ -525,7 +539,7 @@ intervalos bootstrap; dos corridas de entrenamiento de M1, M2 y M4 en MicroLib):
   ese sesgo y es significativamente peor que M2 en ambos datasets. La etapa de segmentación desplaza el
   objetivo de la GAN más que cualquier cambio de crítico: la calidad de la segmentación importa más que la
   arquitectura del crítico.
-- **PI3 — Swin-T como crítico adicional: iguala a la línea base, sin una mejora medible.** El ensamble CNN +
+- **PI3 — Swin-T como crítico adicional: iguala al baseline, sin una mejora medible.** El ensamble CNN +
   Swin congelado (M4, al estilo Vision-aided GAN) está estadísticamente a la par de SliceGAN en las tres
   comparaciones (dos corridas en MicroLib, una en el sintético), es significativamente mejor que el crítico
   solo-Swin en los datos sintéticos, y la calidad de su entrenamiento es la más reproducible entre corridas.
@@ -552,9 +566,8 @@ obligan a reducir las ventanas de Swin-T a 4 × 4 y 2 × 2 y usan el backbone le
 preentrenamiento de 224 px; una sola micrografía real, de alto contraste y dos fases, donde un umbral global
 ya es casi óptimo.
 
-SliceGAN es la línea base de 2021 en la literatura; trabajos de 2024 (Micro3Diff, DDPM-GAN) mejoran
-descriptores y estabilidad con modelos de difusión, pero están fuera del alcance de un proyecto de un curso
-de Vision Transformers. La contribución aquí es una evaluación controlada de críticos Swin y de SAM como
+SliceGAN es el baseline en la literatura; trabajos de 2024 (Micro3Diff, DDPM-GAN) mejoran
+descriptores y estabilidad con modelos de difusión, pero están fuera del alcance de este trabajo. La contribución aquí es una evaluación controlada de críticos Swin y de SAM como
 etapa de segmentación.
 
 **Trabajo en curso: un transformer de difusión como alternativa a SliceGAN.** En lugar de un crítico ViT,
@@ -569,9 +582,7 @@ los mismos descriptores; sus resultados no forman parte de este informe.
 **Trabajo futuro.** Cinco o más corridas de entrenamiento por modelo, que la dispersión entre corridas exige
 antes de cualquier ranking; micrografías más difíciles (bajo contraste, texturas,
 tres fases), donde la segmentación por objetos de SAM puede rendir, posiblemente con prompts de puntos o un
-decodificador de máscaras ajustado; materiales anisótropos (SliceGAN con tres vistas, que además preservaría
-el bandeado visto en la Sección 5.4); homogeneización de los RVE periódicos exportados (FEM/FFT/FNO) con un
-estudio de convergencia del tamaño del RVE; y generadores basados en difusión.
+decodificador de máscaras ajustado; y generadores basados en difusión.
 
 ## 7. Planificación
 

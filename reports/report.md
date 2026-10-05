@@ -7,22 +7,22 @@ Vision Transformers — FIUBA. Individual work.
 Three-dimensional microstructures are needed to compute effective material properties (for example as
 representative volume elements for finite-element analysis), but 3D imaging (micro-CT, FIB-SEM) is
 expensive and often unavailable, while 2D micrographs are cheap, fast and usually of higher resolution.
-This project generates 3D two-phase microstructures from a single 2D micrograph with SliceGAN and studies
+This project generates 3D two-phase microstructures from a single 2D micrograph with SliceGAN (Kench & Cooper, 2021) and studies
 whether Vision Transformers improve it, either as the adversarial critic or as a segmentation front-end.
 
 ### 1.1 Background: SliceGAN
 
 **The problem.** A 2D micrograph of a material contains, statistically, much of the information of its 3D
-structure: for an *isotropic* material (no preferred direction), every planar cut through the volume has
+structure: for an isotropic material (no preferred direction), every planar cut through the volume has
 the same statistics (phase fractions, feature sizes and shapes, spatial correlations) as any other. The
 task is therefore to produce 3D volumes whose 2D sections are indistinguishable, statistically, from the
 micrograph. Classical reconstruction methods optimize a 3D volume to match chosen statistical
-descriptors (e.g. the two-point correlation); they are slow (hours for 10⁶ voxels) and only reproduce the
+descriptors (e.g. the two-point correlation), and they are slow (hours for 10⁶ voxels) and only reproduce the
 descriptors they were told to match.
 
 **Generative adversarial networks.** A GAN trains two networks against each other: a *generator* G that
 maps random noise to samples, and a *discriminator* (critic) D that tries to tell generated samples from
-real ones. G is updated to fool D; at equilibrium the generated distribution matches the real one. GANs
+real ones. G is updated to fool D. At equilibrium the generated distribution matches the real one. GANs
 learn the statistics directly from the data instead of from hand-picked descriptors, and once trained
 they generate new samples in seconds.
 
@@ -41,11 +41,15 @@ SliceGAN combines a **3D generator** with a **2D discriminator** and bridges the
 
 ![SliceGAN training](figures/slicegan_schematic.png)
 
-Training uses the Wasserstein loss with gradient penalty (WGAN-GP; Gulrajani et al., 2017), in which D is
-an unbounded *critic* estimating the Wasserstein distance between real and generated slices, with 5
-critic updates per generator update. The paper's Algorithm 1 shows D all 64 slices per direction of every
-generated volume and uses a generator batch twice the critic batch (m_G = 2 m_D), which the authors found
-most efficient.
+Training in the original version uses the Wasserstein loss with gradient penalty (WGAN-GP; Gulrajani et
+al., 2017), in which D is an unbounded *critic* estimating the Wasserstein distance between real and
+generated slices, with 5 critic updates per generator update. Using a WGAN means that this distance is only
+valid if the critic is a 1-Lipschitz function (gradient norm with respect to the input ≤ 1). Instead of
+clipping the weights as the original WGAN does, the GP enforces the constraint softly: a random
+interpolation between a real slice x and a generated one x̃, x̂ = εx + (1−ε)x̃ with ε ~ U[0, 1], is
+taken, and the term λ(‖∇D(x̂)‖₂ − 1)², with λ = 10, is added to the critic loss. The discriminator sees all
+64 slices per direction of every generated volume and uses a generator batch twice the critic batch
+(m_G = 2 m_D), which the authors found most efficient.
 
 **Generator design: uniform information density.** Early SliceGAN versions produced worse quality near
 volume edges. The cause is transpose convolution: a voxel near the edge of the output receives
@@ -53,15 +57,13 @@ contributions from fewer kernel positions than a central voxel, so information i
 For microstructures, where edges matter as much as the centre, the authors derive rules for the kernel
 size k, stride s and padding p (s < k, k mod s = 0, p ≥ k − s) and use {k, s, p} = {4, 2, 2}. They also
 give the latent z a spatial size of 4 instead of 1, so that the first layer already learns overlapping
-kernel outputs; as a consequence, volumes larger than 64³ can be generated after training by simply
-enlarging z. The released code (used unchanged here) replaces the last transpose convolution by an
-upsample + convolution ("resize-convolution") to avoid checkerboard artifacts. The critic is a plain
-2D CNN of five strided convolutions (64 × 64 slice → one score).
+kernel outputs. As a consequence, volumes larger than 64³ can be generated after training by simply
+enlarging z. The critic, in turn, is a plain 2D CNN of five strided convolutions (64 × 64 slice → one score).
 
 **Scope and limits.** SliceGAN reproduces the micrograph's statistics without hand-picked descriptors,
 trains in a few hours on one GPU and generates volumes in seconds. It was validated against real 3D
 data of a battery electrode and later applied to 87 materials in the MicroLib library (Kench et al.,
-2022). Its main assumptions are isotropy (anisotropic materials need two or three perpendicular
+2022). In this work it is restricted to isotropic cases (anisotropic materials need two or three perpendicular
 micrographs and separate critics) and a field of view that is representative of the material.
 
 ### 1.2 Background: Swin-T and SAM, and where they enter the pipeline
@@ -84,9 +86,10 @@ training (ViTGAN; Lee et al., 2022), which turned out to be the central difficul
 a prompt encoder (points, boxes) and a light mask decoder, trained on 1 billion masks. In automatic mode a
 grid of point prompts yields a mask for every object, zero-shot.
 
-**How SAM is included.** SliceGAN needs a segmented micrograph (one label per phase) as training data;
-the baseline obtains it with a global gray-level threshold (Otsu). SAM is used as an alternative
-*front-end* for this segmentation step, and the rest of the pipeline is unchanged:
+**How SAM is included.** SliceGAN needs a segmented micrograph (one label per phase) as training data.
+The baseline approach obtains it with a global gray-level threshold computed with Otsu's method. This works
+well for two-phase cases, and it can be extended to multi-phase ones. In this work, SAM is used as an
+alternative front-end for this segmentation step, and the rest of the pipeline is unchanged:
 
 1. SAM ViT-B (`facebook/sam-vit-base`, no fine-tuning) runs on overlapping 256 px tiles of the micrograph
    with a 32 × 32 point grid per tile (a single pass over the whole image misses most small islands);
@@ -97,13 +100,13 @@ the baseline obtains it with a global gray-level threshold (Otsu). SAM is used a
 
 ![SAM front-end](figures/sam_frontend.png)
 
-### 1.3 Research questions
+### 1.3 Project questions
 
 - **RQ1 — ViT critic.** Does replacing SliceGAN's CNN discriminator by a Swin Transformer (Swin-T)
   improve the generated microstructures? (M1 vs M2, with an M1 + DiffAug ablation)
 - **RQ2 — SAM front-end.** Does segmenting the micrograph with SAM, instead of a global threshold,
   improve them? (M2 vs M3)
-- **RQ3 — ViT as an additional critic (extension).** Does adding a pretrained Swin-T critic next to
+- **RQ3 — ViT as an additional critic.** Does adding a pretrained Swin-T critic next to
   SliceGAN's CNN, as in Vision-aided GAN (Kumari et al., 2022), help, either from scratch (M4) or as a
   fine-tuning stage of a trained SliceGAN (M5, compared against M1 trained for the same extra steps)?
 
@@ -114,11 +117,18 @@ Quality is measured with the statistical descriptors used in the microstructure-
 
 ![Pipeline](figures/pipeline.png)
 
-**Data.** The main case is MicroLib entry 000210 (DoITPoMS micrograph library): an optical micrograph
-of dark islands in a light matrix, 437 × 800 px after removing the scale bar, 0.687 µm/px. It was
-chosen at random among the MicroLib two-phase entries with a phase gray-level gap ≥ 80 and accepted
-after an isotropy check (x/y correlation-length ratio 1.11). A synthetic micrograph (non-overlapping
-discs, φ = 0.25, rendered with blur and noise, exact ground-truth mask) is used as a sanity check.
+**Data.** In the isotropic case the training set is a single 2D micrograph, and the same image serves as
+the reference for the three planes (xy, xz, yz). For anisotropic materials up to three images can be given,
+one per orthogonal plane, and each direction has its own critic.
+
+In this work, the main case is MicroLib entry `000210` (DoITPoMS micrograph library): an optical
+micrograph of dark islands in a light matrix, 437 × 800 px after removing the scale bar, 0.687 µm/px. It
+was chosen at random among the MicroLib two-phase entries with a phase gray-level gap ≥ 80 and accepted
+after an isotropy check (x/y correlation-length ratio 1.11).
+
+The second case study is a synthetic micrograph (non-overlapping discs, φ = 0.25, rendered with blur and
+noise, exact ground-truth mask). Unlike the previous case, the exact phase mask is known, so both the
+segmentation (Otsu or SAM) and the reference descriptors (φ, S₂) are measured without annotation error.
 
 **Segmentation (front-end).** M1, M2, M4 and M5 train on an Otsu label map (φ = 0.232). M3 trains on a
 SAM label map: zero-shot SAM ViT-B on 256 px tiles, overlapping masks merged (IoU > 0.3), and groups
@@ -159,14 +169,17 @@ overlays, logging to file and console, MLflow experiment tracking, 88 pytest tes
 - SAM: `facebook/sam-vit-base` through the `transformers` mask-generation pipeline, zero-shot.
 
 **SliceGAN integration.** The upstream repository is a git submodule (`external/SliceGAN`, MIT) and is
-not modified. `src/models/slicegan_wrapper.py` builds the generator and CNN critic with upstream's
-network factory and the exact layer lists of `run_slicegan.py`, and reuses its gradient penalty.
-`src/models/train.py` is a fork of upstream's training loop with the same WGAN-GP schedule (Adam
-1e-4, β = (0.9, 0.99), λ_GP = 10, 5 critic steps per generator step) and SliceGAN's Algorithm 1 batch
-rule: the critic sees all 64 slices per axis of m_D = 1 volume, the generator step uses m_G = 2 m_D
-volumes. Additions: critic branches (single critic or CNN + Swin ensemble), hinge loss, differentiable
-augmentation of critic inputs (DiffAug: translation, cutout, 90° rotations/flips), generator warm
-start, and checkpoint selection. Translations (up to ±8 px) and cutout positions are deliberately not
+not modified.
+
+- `src/models/slicegan_wrapper.py` builds the generator and CNN critic with upstream's network factory and
+  the exact layer lists of `run_slicegan.py`, and reuses its gradient penalty.
+- `src/models/train.py` is a fork of upstream's training loop with the same WGAN-GP schedule (Adam 1e-4,
+  β = (0.9, 0.99), λ_GP = 10, 5 critic steps per generator step) and SliceGAN's batch rule: the critic
+  sees all 64 slices per axis of m_D = 1 volume, the generator step uses m_G = 2 m_D volumes.
+- Additions: critic branches (single critic or CNN + Swin ensemble), hinge loss, differentiable
+  augmentation of critic inputs (DiffAug: translation, cutout, 90° rotations/flips), generator warm
+  start, and checkpoint selection.
+- Translations (up to ±8 px) and cutout positions are deliberately not
 aligned to Swin-T's 4 px patch grid: the real crops are taken at arbitrary pixel offsets too, and unaligned
 shifts change the content of every patch, so the critic cannot exploit where a feature falls within a patch.
 
@@ -190,11 +203,17 @@ period (the upstream 1-voxel crop duplicates a slice at the seam); periodicity i
 the wrap-around face mismatch with interior slice-to-slice mismatch (ratio 1.0–2.0 vs 8–13 without
 tiling).
 
-**Main modules.** `src/data/make_dataset.py` (download, crop, Otsu, crops), `src/features/sam_segment.py`
-(SAM front-end), `src/features/descriptors.py` (φ, S₂, L), `src/models/discriminator_swin.py` (Swin
-critics), `src/models/train.py`, `src/models/generate.py` (volumes + metrics),
-`src/visualization/visualize.py` (figures, `metrics.csv`), an interactive volume viewer
-(`reports/viewer/`) and the exploratory notebook `notebooks/00_eda.ipynb`.
+**Main modules.**
+
+- `src/data/make_dataset.py`: download, crop, Otsu, crops.
+- `src/features/sam_segment.py`: SAM front-end.
+- `src/features/descriptors.py`: φ, S₂, L.
+- `src/models/discriminator_swin.py`: Swin critics.
+- `src/models/train.py`.
+- `src/models/generate.py`: volumes + metrics.
+- `src/visualization/visualize.py`: figures, `metrics.csv`.
+- `reports/viewer/`: an interactive volume viewer.
+- `notebooks/00_eda.ipynb`: EDA notebook.
 
 ## 4. Evaluation
 
@@ -242,9 +261,6 @@ N = 128 generated 64³ volumes per model (different seeds; the brief requires N 
 Reference scales: on the synthetic dataset, the Otsu segmentation vs the ground-truth mask gives
 `S₂ MAE = 0.0021`. Uncorrelated random 64³ volumes with the correct `φ` of MicroLib 000210 give
 `S₂ MAE = 0.042` (`err = 0.42`) and `L MAE = 0.077` (`err = 0.89`), a floor any useful model must beat.
-
-FID and 3D SSIM are not used (they need volumetric ground truth), and no classification accuracy is
-reported.
 
 ## 5. Results and examples
 
@@ -463,7 +479,7 @@ activations in memory); otherwise it ran out of GPU memory. Values: `reports/met
 
 ## 6. Conclusions and future work
 
-**Answers to the research questions** (two datasets, 128 test volumes per model, bootstrap intervals; two
+**Answers to the project questions** (two datasets, 128 test volumes per model, bootstrap intervals; two
 training runs of M1, M2 and M4 on MicroLib):
 
 - **RQ1 — Swin-T instead of the CNN critic: no.** Trained in SliceGAN's WGAN-GP setup, a Swin-T critic was
@@ -502,9 +518,8 @@ models; 64 px slices, which force Swin-T's windows down to 4 × 4 and 2 × 2
 and use the backbone far from its 224 px pretraining resolution; one real micrograph, high contrast and
 two phases, where a global threshold is already near-optimal.
 
-SliceGAN is the 2021 literature baseline; 2024 works (Micro3Diff, DDPM-GAN) improve descriptors and
-stability with diffusion models, but are outside the scope of a Vision Transformer course project. The
-contribution here is a controlled evaluation of Swin critics and of SAM as a phase front-end.
+SliceGAN is the literature baseline; 2024 works (Micro3Diff, DDPM-GAN) improve descriptors and stability
+with diffusion models, but are outside the scope of this work. The contribution here is a controlled evaluation of Swin critics and of SAM as a phase front-end.
 
 **Ongoing work: a diffusion transformer as an alternative to SliceGAN.** Instead of a ViT critic, the
 generator itself is being replaced by a Vision Transformer. A small 2D Diffusion Transformer (DiT; Peebles
@@ -517,9 +532,7 @@ this report.
 
 **Future work.** Five or more training runs per model, which the run-to-run spread requires before any
 ranking; harder micrographs (low contrast, texture, three phases) where SAM's
-object-level segmentation can pay off, possibly with point prompts or a fine-tuned mask decoder;
-anisotropic materials (three-view SliceGAN, which would also preserve the banding seen in Section 5.4);
-homogenization of the exported periodic RVEs (FEM/FFT/FNO) with an RVE-size convergence study; and
+object-level segmentation can pay off, possibly with point prompts or a fine-tuned mask decoder; and
 diffusion-based generators.
 
 ## 7. Planning
