@@ -526,20 +526,20 @@ diffusion-based generators.
 
 | Task | Owner | Status |
 |------|-------|--------|
-| Repo skeleton, configs, Makefile, Poetry setup, tests, MLflow tracking | Student | Done |
-| Datasets: synthetic + MicroLib 000210; EDA notebook | Student | Done |
-| Descriptors φ / S₂ / L, bootstrap intervals + tests | Student | Done |
-| M1 SliceGAN baseline (+ DiffAug ablation, M1-extended) | Student | Done |
-| M2 Swin-T critic + stabilization study (v1–v3, probes A/B/C, hinge variants) | Student | Done |
-| M3 SAM front-end | Student | Done |
-| M4 / M5 Vision-aided extensions | Student | Done |
-| Repeat runs (second seeds of M1, M2, M4) and Swin critic at 128 px | Student | Done |
-| Evaluation protocol (train / validation / test seeds), figures, saliency | Student | Done |
-| Interactive volume viewer and Streamlit explorer | Student | Done |
-| RVE export for FEM / FFT codes | Student | Done |
-| Report (English + Spanish, PDF) | Student | Done (5 Oct) |
-| M6 diffusion transformer (ongoing work, Section 6) | Student | In progress (for the presentation) |
-| Presentation, 15 min | Student | 12 Oct |
+| Repo skeleton, configs, Makefile, Poetry setup, tests, MLflow tracking | Braian Desia | Done |
+| Datasets: synthetic + MicroLib 000210; EDA notebook | Braian Desia | Done |
+| Descriptors φ / S₂ / L, bootstrap intervals + tests | Braian Desia | Done |
+| M1 SliceGAN baseline (+ DiffAug ablation, M1-extended) | Braian Desia | Done |
+| M2 Swin-T critic + stabilization study (v1–v3, probes A/B/C, hinge variants) | Braian Desia | Done |
+| M3 SAM front-end | Braian Desia | Done |
+| M4 / M5 Vision-aided extensions | Braian Desia | Done |
+| Repeat runs (second seeds of M1, M2, M4) and Swin critic at 128 px | Braian Desia | Done |
+| Evaluation protocol (train / validation / test seeds), figures, saliency | Braian Desia | Done |
+| Interactive volume viewer and Streamlit explorer | Braian Desia | Done |
+| RVE export for FEM / FFT codes | Braian Desia | Done |
+| Report (English + Spanish, PDF) | Braian Desia | Done (5 Oct) |
+| M6 diffusion transformer (ongoing work, Section 6) | Braian Desia | In progress (for the presentation) |
+| Presentation, 15 min | Braian Desia | 12 Oct |
 
 ## References
 
