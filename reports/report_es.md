@@ -157,7 +157,7 @@ recortes reales de 64 × 64 de la imagen de entrenamiento se puntúan con un cr�
 
 **Stack.** Python 3.11, PyTorch 2.5.1 (CUDA 12.4), timm 1.0.11, Hugging Face `transformers` 4.46.3,
 NumPy/SciPy/scikit-image, entorno Poetry (`setup.sh`), configuraciones YAML con herencia y superposición
-por dataset, logging a archivo y consola, seguimiento de experimentos con MLflow, 81 tests de pytest.
+por dataset, logging a archivo y consola, seguimiento de experimentos con MLflow, 82 tests de pytest.
 Entrenado en una NVIDIA RTX A2000 (12 GB).
 
 **Modelos preentrenados.**

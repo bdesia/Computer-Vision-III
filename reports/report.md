@@ -146,7 +146,7 @@ S₂(r) and L(r), overall and per slice orientation, with bootstrap confidence i
 
 **Stack.** Python 3.11, PyTorch 2.5.1 (CUDA 12.4), timm 1.0.11, Hugging Face `transformers` 4.46.3,
 NumPy/SciPy/scikit-image, Poetry environment (`setup.sh`), YAML configs with inheritance and dataset
-overlays, logging to file and console, MLflow experiment tracking, 81 pytest tests. Trained on one NVIDIA RTX A2000 (12 GB).
+overlays, logging to file and console, MLflow experiment tracking, 82 pytest tests. Trained on one NVIDIA RTX A2000 (12 GB).
 
 **Pretrained models.**
 
