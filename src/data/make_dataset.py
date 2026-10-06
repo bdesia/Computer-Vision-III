@@ -14,7 +14,7 @@ import numpy as np
 import tifffile
 import yaml
 from PIL import Image
-from scipy.ndimage import gaussian_filter
+from scipy.ndimage import binary_dilation, gaussian_filter
 from skimage.filters import threshold_otsu
 
 from src.utils import get_logger, load_config, set_seed, setup_logging
@@ -91,6 +91,33 @@ def render_grayscale(
     if noise_std > 0:
         gray = gray + rng.normal(0.0, noise_std, size=gray.shape).astype(np.float32)
     return np.clip(gray, 0.0, 1.0)
+
+
+DEGRADATION_KEYS = ("rim_depth", "ramp_amplitude", "noise_std_matrix", "noise_std_inclusion")
+
+
+def degrade(gray: np.ndarray, labels: np.ndarray, syn: dict, rng: np.random.Generator) -> np.ndarray:
+    """Optional degradations that break a single global threshold (label probe `synthetic_sam`).
+
+    Applied after `render_grayscale`, only for the keys present in `syn` (the default synthetic has none):
+    - rim_depth / rim_width: a thin dark ring just outside every disc (blurred like the image), so each
+      instance keeps a locally visible edge even where its interior matches the far matrix;
+    - ramp_amplitude: additive illumination ramp across x (total change, centred on 0);
+    - noise_std_matrix / noise_std_inclusion: per-phase Gaussian noise.
+    """
+    out = gray.astype(np.float32)
+    if syn.get("rim_depth"):
+        disc = labels.astype(bool)
+        ring = binary_dilation(disc, iterations=int(syn.get("rim_width", 1))) & ~disc
+        out = out - syn["rim_depth"] * gaussian_filter(ring.astype(np.float32), sigma=syn.get("blur_sigma", 0) or 0)
+    if syn.get("ramp_amplitude"):
+        x = np.linspace(-0.5, 0.5, out.shape[1], dtype=np.float32)
+        out = out + syn["ramp_amplitude"] * x[None, :]
+    std_m, std_i = syn.get("noise_std_matrix", 0.0), syn.get("noise_std_inclusion", 0.0)
+    if std_m or std_i:
+        std = np.where(labels == 1, std_i, std_m).astype(np.float32)
+        out = out + std * rng.standard_normal(out.shape).astype(np.float32)
+    return np.clip(out, 0.0, 1.0)
 
 
 # --------------------------------------------------------------------------- image I/O
@@ -181,6 +208,8 @@ def resolve_raw_image(cfg: dict, rng: np.random.Generator) -> tuple[Path, dict]:
 
     if source == "synthetic":
         syn = data_cfg["synthetic"]
+        if syn.get("seed") is not None:  # a dataset with its own RSA layout (e.g. synthetic_sam)
+            rng = np.random.default_rng(syn["seed"])
         labels, n_discs = generate_rsa(
             canvas=syn["canvas"],
             phi_target=syn["phi_target"],
@@ -198,6 +227,8 @@ def resolve_raw_image(cfg: dict, rng: np.random.Generator) -> tuple[Path, dict]:
             syn["noise_std"],
             rng,
         )
+        if any(syn.get(k) for k in DEGRADATION_KEYS):
+            gray = degrade(gray, labels, syn, rng)
         save_png(raw_path, gray)
         gt_path = raw_path.with_name(f"{raw_path.stem}_gt.png")
         save_png(gt_path, labels, binary=True)
@@ -205,7 +236,7 @@ def resolve_raw_image(cfg: dict, rng: np.random.Generator) -> tuple[Path, dict]:
             "phi_true": float(labels.mean()),
             "phi_target": syn["phi_target"],
             "n_discs": n_discs,
-            "seed": cfg["seed"],
+            "seed": syn["seed"] if syn.get("seed") is not None else cfg["seed"],
             "params": syn,
             "gt_path": gt_path.as_posix(),
         }

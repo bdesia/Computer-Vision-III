@@ -1,0 +1,23 @@
+# Dataset overlay: synthetic_sam, a LABEL PROBE, not a training set. Do not train on it.
+# Same RSA discs as the default synthetic (non-overlapping, phi 0.25, 512^2) with its own layout seed, rendered
+# by render_grayscale and then degraded so that a single global threshold fails while every disc stays a
+# closed object with a locally visible edge (see make_dataset.degrade):
+#   - illumination ramp across x larger than the phase contrast (0.5 vs 0.70 - 0.35),
+#   - per-phase Gaussian noise so the two gray histograms overlap,
+#   - a thin dark rim around each disc.
+# The clean mask is saved as data/raw/synthetic_sam/micro_2d_gt.png and used only to score Otsu and SAM.
+# Usage: make data DATA=configs/data/synthetic_sam.yaml ; make sam DATA=configs/data/synthetic_sam.yaml
+# Probe result (vs the clean mask, phi 0.250): Otsu IoU 0.430, phi 0.467 | SAM pipeline IoU 0.455, phi 0.123.
+# SAM's masks are good (right half IoU 0.909) but the pipeline's global group-intensity rule labels the discs
+# on the dark half as matrix (left half IoU 0.019).
+data:
+  name: synthetic_sam
+  source: synthetic
+  synthetic:
+    seed: 7                   # own RSA layout (the default synthetic uses the global seed 42)
+    noise_std: 0.0            # replaced by the per-phase noise below
+    ramp_amplitude: 0.5       # total change across x; Otsu IoU vs GT 0.43 (default synthetic: 0.913)
+    noise_std_matrix: 0.08
+    noise_std_inclusion: 0.08
+    rim_depth: 0.25
+    rim_width: 1

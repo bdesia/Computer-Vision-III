@@ -10,6 +10,7 @@ import yaml
 from src.data.make_dataset import (
     binarize,
     build_dataset,
+    degrade,
     extract_crops,
     generate_rsa,
     load_grayscale,
@@ -51,6 +52,32 @@ def test_binarize_recovers_noisy_rendering():
     pred, _ = binarize(gray)
     iou = np.logical_and(pred, labels).sum() / np.logical_or(pred, labels).sum()
     assert iou > 0.85
+
+
+def _iou(pred, labels):
+    return np.logical_and(pred, labels).sum() / np.logical_or(pred, labels).sum()
+
+
+def test_ramp_and_overlapping_noise_break_a_global_threshold():
+    """synthetic_sam degradations: a single Otsu cut loses most of its IoU (no SAM involved)."""
+    labels, _ = _rsa(seed=3)
+    syn = {"blur_sigma": 1.5, "ramp_amplitude": 0.5, "noise_std_matrix": 0.08, "noise_std_inclusion": 0.08,
+           "rim_depth": 0.25, "rim_width": 1}
+    clean = render_grayscale(labels, 0.35, 0.7, 1.5, 0.05, np.random.default_rng(0))
+    rendered = render_grayscale(labels, 0.35, 0.7, 1.5, 0.0, np.random.default_rng(0))
+    degraded = degrade(rendered, labels, syn, np.random.default_rng(0))
+    iou_clean = _iou(binarize(clean)[0], labels)
+    iou_degraded = _iou(binarize(degraded)[0], labels)
+    assert iou_clean > 0.85 and iou_degraded < 0.6
+    # the instance edge stays locally visible: within a column band, inclusions are still brighter than matrix
+    band = np.s_[:, 60:68]
+    assert degraded[band][labels[band] == 1].mean() > degraded[band][labels[band] == 0].mean() + 0.2
+
+
+def test_degrade_is_a_no_op_without_degradation_keys():
+    labels, _ = _rsa(seed=1)
+    gray = render_grayscale(labels, 0.35, 0.7, 1.5, 0.05, np.random.default_rng(0))
+    assert np.array_equal(degrade(gray, labels, {"blur_sigma": 1.5}, np.random.default_rng(0)), gray)
 
 
 def test_binarize_labels_minority_as_inclusion():

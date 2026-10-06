@@ -83,6 +83,8 @@ poetry run python -m src.data.make_dataset --data configs/data/microlib_000210.y
 # make data   /   make data DATA=configs/data/microlib_000210.yaml
 ```
 
+**Label probe — `synthetic_sam`** (`configs/data/synthetic_sam.yaml`): a label probe, not a training set.
+
 **Real micrograph — MicroLib 000210** (`configs/data/microlib_000210.yaml`, main case). An optical
 micrograph from the [DoITPoMS micrograph library](https://www.doitpoms.ac.uk/miclib/) as curated in
 [MicroLib](https://microlib.io) (Kench et al., 2022): dark islands in a light matrix. It was chosen at
