@@ -43,7 +43,7 @@ src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, gen
 src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, app data helpers, report PDF
 app/                streamlit_app.py — interactive explorer (make app)
 src/tracking.py     optional MLflow tracking and backfill of finished runs
-tests/              pytest (91 tests)
+tests/              pytest (92 tests)
 notebooks/          00_eda.ipynb — training images, Otsu vs SAM, crop statistics, 2D descriptors
 reports/            report.md / report_es.md (+ PDFs), figures/, metrics*.csv, comparison_vs_m1_*.csv,
                     probes/ and runs/ (per-epoch selection logs), viewer/ (interactive volume viewer)
@@ -83,7 +83,7 @@ poetry run python -m src.data.make_dataset --data configs/data/microlib_000210.y
 # make data   /   make data DATA=configs/data/microlib_000210.yaml
 ```
 
-**Label probe — `synthetic_sam`** (`configs/data/synthetic_sam.yaml`): a label probe, not a training set.
+**Label probe — `synthetic_sam`** (`configs/data/synthetic_sam.yaml`): a label probe, not a training set; `make sam-probe` scores Otsu and SAM (global vs local-contrast labeling) against its clean mask (report §5.4).
 
 **Real micrograph — MicroLib 000210** (`configs/data/microlib_000210.yaml`, main case). An optical
 micrograph from the [DoITPoMS micrograph library](https://www.doitpoms.ac.uk/miclib/) as curated in

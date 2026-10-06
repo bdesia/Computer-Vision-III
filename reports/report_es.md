@@ -415,6 +415,32 @@ misma estadística en los tres planos, y la aumentación D4 de los recortes sime
 modo que los generadores aprenden una versión isótropa de la estructura. Las métricas con promedio radial
 son insensibles a esto, pero ningún modelo reproduce aquí la dirección del bandeado.
 
+**Sonda de etiquetado: una imagen donde un umbral global falla.** Las dos imágenes de entrenamiento
+anteriores favorecen a un umbral global, por lo que no pueden mostrar lo que SAM aporta. Una tercera imagen
+sintética, `synthetic_sam` (`configs/data/synthetic_sam.yaml`), conserva los mismos discos sin superposición
+(φ = 0,250, disposición propia) pero agrega una rampa de iluminación en x mayor que el contraste entre fases,
+ruido por fase que hace que los dos histogramas de grises se superpongan y un borde oscuro delgado alrededor de
+cada disco, de modo que cada objeto sigue siendo visible localmente. Es una sonda de etiquetado, no un conjunto
+de entrenamiento: Otsu y SAM se evalúan contra su máscara limpia (`src/features/sam_probe.py`,
+`reports/sam_probe.json`) y no se entrena ninguna GAN con ella.
+
+| Etiquetado (vs máscara limpia, φ 0,250) | IoU | IoU mitad oscura / mitad clara | φ |
+|-----------------------------------------|-----|--------------------------------|---|
+| Otsu (umbral global) | 0,430 | 0,691 / 0,329 | 0,467 |
+| SAM, regla de etiquetado global (la usada en M3) | 0,455 | 0,019 / 0,909 | 0,123 |
+| SAM, etiquetado por contraste local | **0,931** | 0,932 / 0,930 | **0,257** |
+
+![Sonda de etiquetado con SAM](figures/sam_probe.png)
+
+Otsu corta a través de la rampa: pierde inclusiones en el lado oscuro y etiqueta como inclusión la mayor parte
+de la matriz del lado claro (φ 0,467). Las máscaras de SAM encuentran todos los discos, pero la regla del
+pipeline que asigna una fase a cada grupo de máscaras es a su vez global (un único corte de los grises medios de
+los grupos), así que todos los discos de la mitad oscura, más oscuros que la matriz de la mitad clara, quedan
+etiquetados como matriz. Evaluar cada grupo contra un anillo de 3 px justo por fuera de él (`sam.classify:
+local`, opcional; M3 usó la regla global) cancela la rampa: IoU 0,931 y φ a 0,007 del valor real, por encima de
+Otsu en la imagen sintética limpia (0,913). Las máscaras de instancia de SAM no son, por lo tanto, el punto
+débil; lo es el paso que convierte máscaras en fases.
+
 ### 5.5 ¿Qué miran los críticos?
 
 Saliencia SmoothGrad (Smilkov et al., 2017): el gradiente del puntaje de cada crítico entrenado respecto
@@ -538,7 +564,10 @@ intervalos bootstrap; dos corridas de entrenamiento de M1, M2 y M4 en MicroLib):
   dilatación sistemática de un píxel, φ +16 %). La GAN reproduce fielmente el mapa de SAM, así que M3 hereda
   ese sesgo y es significativamente peor que M2 en ambos datasets. La etapa de segmentación desplaza el
   objetivo de la GAN más que cualquier cambio de crítico: la calidad de la segmentación importa más que la
-  arquitectura del crítico.
+  arquitectura del crítico. Una sonda de etiquetado donde un umbral global falla (una rampa de iluminación,
+  Sección 5.4) muestra la otra cara: las máscaras de SAM siguen encontrando todas las partículas y, con una regla
+  de etiquetado por contraste local, SAM alcanza IoU 0,93 frente a 0,43 de Otsu. En este pipeline, la debilidad
+  de SAM zero-shot es el paso que asigna fases a sus máscaras, no las máscaras.
 - **PI3 — Swin-T como crítico adicional: iguala al baseline, sin una mejora medible.** El ensamble CNN +
   Swin congelado (M4, al estilo Vision-aided GAN) está estadísticamente a la par de SliceGAN en las tres
   comparaciones (dos corridas en MicroLib, una en el sintético), es significativamente mejor que el crítico
@@ -566,9 +595,16 @@ obligan a reducir las ventanas de Swin-T a 4 × 4 y 2 × 2 y usan el backbone le
 preentrenamiento de 224 px; una sola micrografía real, de alto contraste y dos fases, donde un umbral global
 ya es casi óptimo.
 
-SliceGAN es el baseline en la literatura; trabajos de 2024 (Micro3Diff, DDPM-GAN) mejoran
+SliceGAN es el baseline en la literatura; trabajos de 2024 (Micro3Diff, Lee & Yun 2024; DDPM-GAN, Phan et al. 2024) mejoran
 descriptores y estabilidad con modelos de difusión, pero están fuera del alcance de este trabajo. La contribución aquí es una evaluación controlada de críticos Swin y de SAM como
 etapa de segmentación.
+
+**Trabajo en curso: etiquetado por contraste local en las imágenes de entrenamiento.** La regla de
+etiquetado que gana la sonda (Sección 5.4) se está aplicando a las imágenes sintética y de MicroLib existentes,
+escribiendo en carpetas separadas para que los mapas con los que se entrenó M3 no cambien, y se evalúa contra
+las mismas referencias que Otsu y la regla global. En MicroLib podría eliminar el halo gris que separa el mapa
+de SAM del de Otsu; si los nuevos mapas son mejores, M3 se reentrenará con ellos. Sus resultados no forman parte
+de este informe.
 
 **Trabajo futuro.** Cinco o más corridas de entrenamiento por modelo, que la dispersión entre corridas exige
 antes de cualquier ranking; micrografías más difíciles (bajo contraste, texturas,
@@ -590,6 +626,8 @@ decodificador de máscaras ajustado; y generadores basados en difusión.
 | Protocolo de evaluación (semillas de entrenamiento / validación / prueba), figuras, saliencia | Braian Desia | Hecho |
 | Visor interactivo de volúmenes y explorador en Streamlit | Braian Desia | Hecho |
 | Exportación de RVE para códigos FEM / FFT | Braian Desia | Hecho |
+| Sonda de etiquetado con SAM (`synthetic_sam`) y etiquetado por contraste local | Braian Desia | Hecho |
+| Etiquetado por contraste local en las imágenes sintética y de MicroLib (trabajo en curso, Sección 6) | Braian Desia | En curso |
 | Informe (inglés + español, PDF) | Braian Desia | Hecho (5 de octubre) |
 | Presentación, 15 min | Braian Desia | 12 de octubre |
 
@@ -600,8 +638,6 @@ decodificador de máscaras ajustado; y generadores basados en difusión.
 - S. Kench et al. MicroLib: A library of 3D microstructures generated from 2D micrographs using SliceGAN.
   *Scientific Data*, 2022.
 - Z. Liu et al. Swin Transformer: Hierarchical Vision Transformer using Shifted Windows. *ICCV*, 2021.
-- A. Dosovitskiy et al. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale.
-  *ICLR*, 2021.
 - A. Kirillov et al. Segment Anything. *ICCV*, 2023.
 - I. Gulrajani et al. Improved Training of Wasserstein GANs. *NeurIPS*, 2017.
 - K. Lee et al. ViTGAN: Training GANs with Vision Transformers. *ICLR*, 2022.

@@ -146,3 +146,16 @@ def test_annotation_reference_uses_midpoint_and_minority(tmp_path):
     ref = annotation_reference(cfg)
     assert ref.dtype == np.uint8 and ref.mean() == pytest.approx(0.25) and ref[:5].all()
     assert annotation_reference({"data": {"raw_path": "x", "microlib": None}}) is None
+
+
+def test_probe_scores_split_whole_left_right():
+    from src.features.sam_probe import scores
+
+    gt = np.zeros((4, 8), dtype=np.uint8)
+    gt[:, 1] = gt[:, 6] = 1
+    pred = gt.copy()
+    pred[:, 6] = 0  # misses the right-half inclusion only
+    out = scores(pred, gt)
+    assert out["left"]["iou"] == 1.0 and out["right"]["iou"] == 0.0
+    assert out["whole"]["iou"] == 0.5 and out["whole"]["phi_error"] == pytest.approx(-0.125)
+

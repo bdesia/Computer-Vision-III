@@ -379,6 +379,30 @@ augmentation symmetrizes x and y on purpose, so the generators learn an isotropi
 structure. The radially averaged metrics are insensitive to this, but no model here reproduces the
 banding direction.
 
+**Label probe: an image where a global threshold fails.** Both training images above favour a global
+threshold, so they cannot show what SAM adds. A third synthetic image, `synthetic_sam`
+(`configs/data/synthetic_sam.yaml`), keeps the same non-overlapping discs (φ = 0.250, own layout) but adds an
+illumination ramp across x larger than the phase contrast, per-phase noise that makes the two gray histograms
+overlap, and a thin dark rim around each disc so every object stays locally visible. It is a label probe,
+not a training set: Otsu and SAM are scored against its clean mask (`src/features/sam_probe.py`,
+`reports/sam_probe.json`), and no GAN is trained on it.
+
+| Labeling (vs clean mask, φ 0.250) | IoU | IoU dark half / bright half | φ |
+|-----------------------------------|-----|-----------------------------|---|
+| Otsu (global threshold) | 0.430 | 0.691 / 0.329 | 0.467 |
+| SAM, global labeling rule (as used for M3) | 0.455 | 0.019 / 0.909 | 0.123 |
+| SAM, local-contrast labeling | **0.931** | 0.932 / 0.930 | **0.257** |
+
+![SAM label probe](figures/sam_probe.png)
+
+Otsu cuts across the ramp: it misses inclusions on the dark side and labels most of the bright-side matrix
+as inclusion (φ 0.467). SAM's masks find every disc, but the pipeline's rule that assigns a phase to each mask
+group is itself global (one split of the groups' mean gray levels), so all discs on the dark half, which are
+darker than the bright-half matrix, are labelled matrix. Scoring each group against a 3 px ring just outside
+it instead (`sam.classify: local`, opt-in; M3 used the global rule) cancels the ramp: IoU 0.931 and φ within
+0.007 of the truth, above Otsu on the clean synthetic image (0.913). SAM's instance masks are therefore not
+the weak point; the step that turns masks into phases is.
+
 ### 5.5 What do the critics look at?
 
 SmoothGrad saliency (Smilkov et al., 2017): the gradient of each trained critic's score with respect to
@@ -493,7 +517,10 @@ training runs of M1, M2 and M4 on MicroLib):
   micrographs zero-shot SAM is a worse segmentation than Otsu against a true ground truth (a systematic
   one-pixel dilation, φ +16 %). The GAN reproduces SAM's map faithfully, so M3 inherits this bias and is
   significantly worse than M2 on both datasets. The front-end shifts the GAN's target more than any change
-  of critic does: segmentation quality matters more than the critic architecture.
+  of critic does: segmentation quality matters more than the critic architecture. A label probe where a
+  global threshold fails (an illumination ramp, Section 5.4) shows the other side: SAM's masks still find
+  every particle, and with a local-contrast labeling rule SAM reaches IoU 0.93 against 0.43 for Otsu. In this
+  pipeline the weakness of zero-shot SAM is the step that assigns phases to its masks, not the masks.
 - **RQ3 — Swin-T as an additional critic: it matches the baseline, with no measurable gain.** The CNN +
   frozen-Swin ensemble (M4, Vision-aided GAN style) is statistically level with SliceGAN in all three
   comparisons (two MicroLib runs, one synthetic), is significantly better than the Swin-only critic on
@@ -518,8 +545,14 @@ models; 64 px slices, which force Swin-T's windows down to 4 × 4 and 2 × 2
 and use the backbone far from its 224 px pretraining resolution; one real micrograph, high contrast and
 two phases, where a global threshold is already near-optimal.
 
-SliceGAN is the literature baseline; 2024 works (Micro3Diff, DDPM-GAN) improve descriptors and stability
+SliceGAN is the literature baseline; 2024 works (Micro3Diff, Lee & Yun 2024; DDPM-GAN, Phan et al. 2024) improve descriptors and stability
 with diffusion models, but are outside the scope of this work. The contribution here is a controlled evaluation of Swin critics and of SAM as a phase front-end.
+
+**Ongoing work: local-contrast labeling on the training images.** The labeling rule that wins the probe
+(Section 5.4) is being applied to the existing synthetic and MicroLib images, writing to separate folders so
+the maps M3 was trained on are unchanged, and scored against the same references as Otsu and the global rule.
+On MicroLib it could remove the gray halo that separates SAM's map from Otsu's; if the new maps are better,
+M3 will be retrained on them. Results are not part of this report.
 
 **Future work.** Five or more training runs per model, which the run-to-run spread requires before any
 ranking; harder micrographs (low contrast, texture, three phases) where SAM's
@@ -541,6 +574,8 @@ diffusion-based generators.
 | Evaluation protocol (train / validation / test seeds), figures, saliency | Braian Desia | Done |
 | Interactive volume viewer and Streamlit explorer | Braian Desia | Done |
 | RVE export for FEM / FFT codes | Braian Desia | Done |
+| SAM label probe (`synthetic_sam`) and local-contrast labeling | Braian Desia | Done |
+| Local-contrast labeling on the synthetic and MicroLib images (ongoing work, Section 6) | Braian Desia | In progress |
 | Report (English + Spanish, PDF) | Braian Desia | Done (5 Oct) |
 | Presentation, 15 min | Braian Desia | 12 Oct |
 
@@ -551,8 +586,6 @@ diffusion-based generators.
 - S. Kench et al. MicroLib: A library of 3D microstructures generated from 2D micrographs using SliceGAN.
   *Scientific Data*, 2022.
 - Z. Liu et al. Swin Transformer: Hierarchical Vision Transformer using Shifted Windows. *ICCV*, 2021.
-- A. Dosovitskiy et al. An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale.
-  *ICLR*, 2021.
 - A. Kirillov et al. Segment Anything. *ICCV*, 2023.
 - I. Gulrajani et al. Improved Training of Wasserstein GANs. *NeurIPS*, 2017.
 - K. Lee et al. ViTGAN: Training GANs with Vision Transformers. *ICLR*, 2022.
