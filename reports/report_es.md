@@ -1,6 +1,8 @@
 # SliceGAN con discriminadores Vision Transformer y segmentación con SAM
 
-Vision Transformers — FIUBA. Trabajo individual.
+Vision Transformers — FIUBA. 
+
+Trabajo individual.
 
 ## 1. Objetivo del proyecto
 
@@ -545,6 +547,49 @@ contrario se quedaba sin memoria de GPU. Valores: `reports/metrics_seeds_microli
   las de prueba, y sus últimas épocas oscilan (última época 0,027). La mejor separación real-vs-generado de
   las características congeladas a 128 px no se tradujo en mejores volúmenes, por lo que no se corrió la
   repetición de esta variante en el dataset sintético.
+
+### 5.8 Tamaño de los modelos y costo computacional
+
+Medido en la RTX A2000 (12 GB) usada en todas las corridas (`src/visualization/compute_cost.py`,
+`reports/compute_cost.json`). Los FLOPs cuentan 2 por multiplicación-suma sobre una entrada; la estimación de
+entrenamiento por paso del generador sigue el esquema de SliceGAN (el crítico ve 1464 rebanadas y el generador
+7 volúmenes por paso, hacia adelante más hacia atrás ≈ 3× la pasada hacia adelante; sin contar la penalización
+de gradiente ni DiffAug).
+
+| Componente | Parámetros (entrenables) | GFLOPs por pasada hacia adelante | Uso |
+|------------|--------------------------|----------------------------------|-----|
+| Generador 3D (todos los modelos) | 40.1 M | 27.1 por volumen de 64³ (145 por 128³) | entrenamiento e inferencia |
+| Crítico CNN de SliceGAN | 2.76 M | 0.21 por rebanada de 64 × 64 | entrenamiento (M1, M4, M5) |
+| Crítico Swin-T, etapas 3–4 entrenadas | 27.5 M (26.3 M) | 0.85 por rebanada | entrenamiento (M2, M3) |
+| Swin-T congelado + cabezas por posición | 27.7 M (0.18 M) | 0.85 por rebanada (4.1 a 128 px) | entrenamiento (M4, M5) |
+| SAM ViT-B (segmentación) | 93.7 M (no se entrena) | — | preparación de datos de M3, una vez |
+
+| Modelo | TFLOPs estimados por paso del generador | s medidos por paso del generador | Tiempo de entrenamiento (MicroLib) |
+|--------|-----------------------------------------|----------------------------------|------------------------------------|
+| M1 CNN | 1.5 | 0,31 | 27 min |
+| M1 + DiffAug | 1.5 | 0,40 | 36 min |
+| M2 / M3 crítico Swin | 4.3 | 1,93 | 163 / 162 min |
+| M4 CNN + Swin congelado | 5.2 | 1,16 | 98 min |
+| M4, Swin a 128 px | 19.5 | 3,61 | 303 min |
+| M5 / M1 extendido (20 épocas desde M1) | 5.2 / 1.5 | 1,16 / 0,31 | 40 / 11 min (+ M1) |
+
+- **La inferencia cuesta lo mismo para todos los modelos.** Los críticos solo se usan para entrenar; todos los
+  modelos comparten el mismo generador de 40.1 M de parámetros, que produce un
+  volumen de 64³ en 14 ms en la GPU (0.25 s en CPU) y uno de 128³ en
+  67 ms. Los críticos Vision Transformer no agregan costo de despliegue.
+- **El costo de entrenamiento lo fija el crítico.** Una rebanada en Swin-T cuesta unas 4× los FLOPs de una en la
+  CNN, y el crítico se evalúa sobre unas 1500 rebanadas por paso del generador, así que domina el entrenamiento.
+  M2 / M3 tardan 6× más que M1, más que la relación de FLOPs (2,9×), porque los gradientes atraviesan 26 M de
+  pesos del crítico y la doble retropropagación de la penalización de gradiente pasa por la atención. M4 hace más
+  FLOPs que M2 pero entrena más rápido (3,7× M1): su backbone Swin está congelado (sin gradientes de pesos) y su
+  rama Swin usa pérdida hinge sin penalización de gradiente. Llevar el Swin a 128 px multiplica sus FLOPs por 4,8
+  y el tiempo de entrenamiento por 3, sin mejora (Sección 5.7); además necesitó una pasada hacia atrás del
+  generador por orientación de corte para entrar en 12 GB.
+- **SAM es un costo único.** Segmentar la imagen de MicroLib lleva unos 35 s
+  (93,7 M de parámetros, teselas de 256 px), despreciable frente al entrenamiento, y SAM no se usa al generar.
+- **Costo frente a beneficio.** Como ninguna variante Swin supera al crítico CNN (Secciones 5.1, 5.6 y 5.7), el
+  crítico de 2,8 M de parámetros de SliceGAN es también la mejor opción por hora de GPU. Las corridas finales de
+  este informe sumaron 28 horas de GPU; las corridas exploratorias (v1–v5, sondas) no están incluidas.
 
 ## 6. Conclusiones y trabajo futuro
 

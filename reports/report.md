@@ -501,6 +501,47 @@ activations in memory); otherwise it ran out of GPU memory. Values: `reports/met
   late epochs oscillate (last epoch 0.027). The better real-vs-generated separation of the frozen features
   at 128 px did not translate into better volumes, so the synthetic repeat of this variant was not run.
 
+### 5.8 Model size and computational cost
+
+Measured on the RTX A2000 (12 GB) used for every run (`src/visualization/compute_cost.py`,
+`reports/compute_cost.json`). FLOPs count 2 per multiply-add on one input; the training estimate per generator
+step follows SliceGAN's schedule (the critic sees 1464 slices and the generator 7 volumes per step, forward plus
+backward ≈ 3× forward; gradient penalty and DiffAug not included).
+
+| Component | Parameters (trainable) | GFLOPs per forward pass | Used for |
+|-----------|------------------------|-------------------------|----------|
+| 3D generator (all models) | 40.1 M | 27.1 per 64³ volume (145 per 128³) | training and inference |
+| SliceGAN CNN critic | 2.76 M | 0.21 per 64 × 64 slice | training (M1, M4, M5) |
+| Swin-T critic, stages 3–4 trained | 27.5 M (26.3 M) | 0.85 per slice | training (M2, M3) |
+| Frozen Swin-T + per-position heads | 27.7 M (0.18 M) | 0.85 per slice (4.1 at 128 px) | training (M4, M5) |
+| SAM ViT-B (front-end) | 93.7 M (none trained) | — | M3 data preparation, once |
+
+| Model | Estimated TFLOPs per generator step | Measured s per generator step | Training time (MicroLib) |
+|-------|------------------------------------|-------------------------------|--------------------------|
+| M1 CNN | 1.5 | 0.31 | 27 min |
+| M1 + DiffAug | 1.5 | 0.40 | 36 min |
+| M2 / M3 Swin critic | 4.3 | 1.93 | 163 / 162 min |
+| M4 CNN + frozen Swin | 5.2 | 1.16 | 98 min |
+| M4, Swin at 128 px | 19.5 | 3.61 | 303 min |
+| M5 / M1-extended (20 epochs from M1) | 5.2 / 1.5 | 1.16 / 0.31 | 40 / 11 min (+ M1) |
+
+- **Inference costs the same for every model.** The critics are only needed for training; all models share the
+  same 40.1 M-parameter generator, which produces a 64³ volume in
+  14 ms on the GPU (0.25 s on CPU) and a 128³ volume in
+  67 ms. Vision Transformer critics therefore add no deployment cost.
+- **Training cost is set by the critic.** A Swin-T slice costs about 4× the FLOPs of a CNN slice, and the critic
+  is evaluated on about 1500 slices per generator step, so the critic dominates training. M2 / M3 take 6× longer
+  than M1, more than the FLOP ratio (2.9×), because gradients flow through 26 M critic weights and the gradient
+  penalty's double backward passes through attention. M4 does more FLOPs than M2 but trains faster (3.7× M1):
+  its Swin backbone is frozen (no weight gradients) and its Swin branch uses a hinge loss without a gradient
+  penalty. Moving the Swin to 128 px multiplies its FLOPs by 4.8 and its training time by 3, for no gain
+  (Section 5.7); it also needed one generator backward pass per slice orientation to fit in 12 GB.
+- **SAM is a one-off cost.** Segmenting the MicroLib image takes about 35 s
+  (93.7 M parameters, 256 px tiles), negligible next to training, and SAM is not used at generation time.
+- **Cost against benefit.** Since no Swin variant beats the CNN critic (Sections 5.1, 5.6, 5.7), SliceGAN's
+  2.8 M-parameter critic is also the best choice per GPU-hour. The final runs of this report took
+  28 GPU-hours in total; the exploratory runs (v1–v5, probes) are not included.
+
 ## 6. Conclusions and future work
 
 **Answers to the project questions** (two datasets, 128 test volumes per model, bootstrap intervals; two

@@ -1,0 +1,72 @@
+{
+  "device": "NVIDIA RTX A2000 12GB",
+  "components": {
+    "generator": {
+      "total_M": 40.117254,
+      "trainable_M": 40.117254,
+      "gflops_64": 27.11617536,
+      "gflops_128": 144.791568384
+    },
+    "cnn_critic": {
+      "total_M": 2.762752,
+      "trainable_M": 2.762752,
+      "gflops_per_slice": 0.20553728
+    },
+    "swin_critic_m2": {
+      "total_M": 27.502267,
+      "trainable_M": 26.307961,
+      "gflops_per_slice": 0.848304384
+    },
+    "swin_critic_m4": {
+      "total_M": 27.677758,
+      "trainable_M": 0.175491,
+      "gflops_per_slice": 0.853829376
+    },
+    "swin_critic_m4_128px": {
+      "total_M": 27.688318,
+      "trainable_M": 0.175491,
+      "gflops_per_slice": 4.101964032
+    }
+  },
+  "train_tflops_per_g_step": {
+    "m1_cnn": 1.4721594163199998,
+    "m2_swin": 4.295192537088,
+    "m4_ensemble": 5.222178035712,
+    "m4_ensemble_swin128": 19.487985444863995
+  },
+  "train_minutes": {
+    "microlib_m1_cnn": 27.4,
+    "microlib_m1_cnn_diffaug": 36.1,
+    "microlib_m1_cnn_seed2": 32.1,
+    "microlib_m1_extended": 11.1,
+    "microlib_m2_swin": 162.8,
+    "microlib_m2_swin_seed2": 166.8,
+    "microlib_m3_swin_sam": 162.5,
+    "microlib_m4_ensemble": 98.3,
+    "microlib_m4_ensemble_seed2": 102.3,
+    "microlib_m4_ensemble_swin128": 303.1,
+    "microlib_m5_finetune": 39.6,
+    "synthetic_m1_cnn": 27.8,
+    "synthetic_m1_cnn_diffaug": 35.2,
+    "synthetic_m1_extended": 11.1,
+    "synthetic_m2_swin": 162.5,
+    "synthetic_m3_swin_sam": 162.7,
+    "synthetic_m4_ensemble": 97.7,
+    "synthetic_m5_finetune": 40.0
+  },
+  "inference_s_per_volume": {
+    "gpu_64": 0.01363952000392601,
+    "gpu_128": 0.067012959998101,
+    "cpu_64": 0.25316463333244127
+  },
+  "sam": {
+    "total_M": 93.735472,
+    "trainable_M": 93.735472,
+    "image": [
+      437,
+      800
+    ],
+    "n_masks": 881,
+    "seconds_microlib": 35.47535550000612
+  }
+}
