@@ -1,7 +1,9 @@
 # SliceGAN with a Vision Transformer discriminator and a SAM front-end
 
-Final project — **Vision Transformers (FIUBA)**. Instructors: Abraham Rodriguez, Oksana Bokhonok.
-Individual work.
+Final project — **Vision Transformers (FIUBA)**.
+Professors: Esp. Abraham Rodriguez and Mg. Oksana Bokhonok. Author: Braian A. Desía (individual work).
+
+Report: [English](reports/report.pdf) · [Spanish](reports/report_es.pdf).
 
 ## Goal
 
@@ -34,13 +36,16 @@ Quality is measured with the phase fraction `φ`, the two-point correlation `S�
 
 ```
 configs/            default.yaml + one yaml per model (m1_cnn, m1_cnn_diffaug, m1_extended, m2_swin,
-                    m3_swin_sam, m4_ensemble, m5_finetune), probe configs, data/ dataset overlays
+                    m3_swin_sam, m4_ensemble, m5_finetune), repeat runs (*_seed2), m4_ensemble_swin128,
+                    stabilization probes, data/ dataset overlays (microlib_000210, synthetic_sam)
 data/               raw/ interim/ processed/<dataset>/ (not versioned, except sam_gt/ READMEs + GT crops)
 external/SliceGAN/  upstream SliceGAN (git submodule, unmodified)
 src/data/           make_dataset.py — downloads or generates the 2D image and 64x64 crops
-src/features/       sam_segment.py (zero-shot SAM + reference scores), descriptors.py (φ, S₂, L, bootstrap)
+src/features/       sam_segment.py (zero-shot SAM + reference scores), sam_probe.py (label probe),
+                    descriptors.py (φ, S₂, L, bootstrap)
 src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, generate.py, linear_probe.py
-src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, app data helpers, report PDF
+src/visualization/  figures, metrics.csv, comparison vs M1, critic saliency, compute cost, viewer export,
+                    app data helpers, report PDF
 app/                streamlit_app.py — interactive explorer (make app)
 src/tracking.py     optional MLflow tracking and backfill of finished runs
 tests/              pytest (92 tests)
@@ -64,7 +69,7 @@ bash setup.sh               # CUDA 12.4 build of PyTorch
 # DEVICE=cpu bash setup.sh  # CPU-only build
 ```
 
-`setup.sh` creates an in-project `.venv`, installs the locked dependencies (main + dev), registers a
+`setup.sh` creates an in-project `.venv`, installs the locked dependencies (main, dev and app groups), registers a
 Jupyter kernel named `tf-vit-slicegan` and adds the repo root to the environment's `sys.path`.
 Run commands with `poetry run ...` or activate `.venv` first.
 If you cloned without submodules: `make vendor`.
@@ -73,7 +78,7 @@ Without a GPU everything runs on CPU (a WARNING is logged); lower `epochs` in th
 
 ## Data
 
-Two datasets are supported. Every command takes an optional dataset overlay with `--data`
+Two training datasets plus a label probe are supported. Every command takes an optional dataset overlay with `--data`
 (`DATA=...` in the Makefile); without it the synthetic dataset is used. Each dataset gets its own
 folders (`data/*/<name>/`, `models/<name>/`, `logs/<name>/`) via the `{data_name}` placeholder.
 
@@ -142,7 +147,8 @@ poetry run python -m src.models.train --config configs/m1_cnn.yaml --epochs 2 --
 `--epochs`, `--iters-per-epoch` and `--device` override the yaml. `train.max_minutes` sets an optional
 wall-clock budget (training stops cleanly and checkpoints).
 
-Each run writes to `models/<name>/<run_name>/`: `G_last.pt`, `D_last.pt`, the resolved `config.yaml`,
+Each run writes to `models/<name>/<run_name>/`: `G_best.pt` / `G_last.pt` (+ `D_*.pt`), half-precision
+generator snapshots every 5 epochs (`snapshots/`), the resolved `config.yaml`,
 `history.csv` (critic real/fake scores, Wasserstein estimate, gradient penalty, G loss, s/step),
 `previews/epochNNN.png` (central xy/xz/yz slices) and SliceGAN's `slicegan_params.data`.
 Logs go to `logs/<name>/<run_name>.log`.
@@ -212,8 +218,9 @@ off by default. Probe logs: `reports/probes/`, figure `reports/figures/stabiliza
 
 **Checkpoint selection and evaluation.** After every epoch the generator produces 16 volumes from
 held-out seeds (`train.select_seeds`, 1000–1015); the epoch with the lowest S₂ MAE vs the model's own
-training image is saved as `G_best.pt`. That checkpoint is evaluated on 128 *different* seeds
-(`generate.seeds`, 0–127) with bootstrap confidence intervals. Single 64³ volumes are small samples
+training image is saved as `G_best.pt`. At evaluation (`generate.checkpoint: auto`) the checkpoint is chosen
+among `G_best`, `G_last` and the snapshots on 128 validation seeds (2000–2127), then evaluated on 128 *different*
+test seeds (`generate.seeds`, 0–127) with bootstrap confidence intervals. Single 64³ volumes are small samples
 (phase fraction varies by ±0.05 between volumes): earlier protocols with 2 selection and 4 evaluation
 seeds (run v5) produced rankings that reversed on more seeds, and choosing the best of 50 noisy epoch
 scores is optimistic (winner's curse), which independent evaluation seeds remove from the reported
@@ -237,6 +244,8 @@ Archived runs: `models/archive_v1/` … `models/archive_v5/` (v1: `reports/metri
 3. **Intensity rule:** the matrix gray level is the image median (majority phase); group mean
    gray levels are split with an area-weighted Otsu threshold and the groups on the far side from
    the matrix are the inclusion phase. Everything else, including pixels no mask covers, is matrix.
+   `sam.classify: local` (opt-in) instead compares each group with a 3 px ring around it, which is robust
+   to illumination gradients (used for the `synthetic_sam` probe; M3 uses the global rule).
 
 ```bash
 make sam                                          # synthetic
@@ -259,9 +268,10 @@ reference is itself a threshold, so it structurally favours Otsu; the synthetic 
 unbiased comparison. The 5 evaluation crops in `sam_gt/` are still written (exact ground truth for
 synthetic); hand-corrected MicroLib crops were not produced.
 
-On the synthetic image SAM's masks follow the blurred edges outwards, overestimating `φ`; Otsu,
-whose threshold sits halfway between the two gray levels, is more accurate there. On MicroLib SAM
-misses a few islands and shows some straight cuts at tile borders.
+On the synthetic image SAM's masks follow the blurred edges outwards (a one-pixel dilation), overestimating
+`φ`; Otsu, whose threshold sits halfway between the two gray levels, is more accurate there. On MicroLib the
+two maps agree on 96 % of the pixels; Otsu adds the gray halo around each particle, so SAM's `φ` is closer to
+the curated reference while Otsu's IoU is higher.
 
 The notebook [notebooks/00_eda.ipynb](notebooks/00_eda.ipynb) (`make eda`) looks at both segmentations in
 more detail: where Otsu and SAM disagree (two thirds on interface rims), SAM's one-pixel dilation on the
@@ -278,7 +288,7 @@ make test                                          # pytest
 
 `make eval` runs `src.models.generate` for every model and then `src.visualization.visualize`:
 
-- **generate** loads `G_best.pt` (`generate.checkpoint`), generates one 64³ volume per seed in
+- **generate** picks the checkpoint on the validation seeds (`generate.checkpoint: auto`), generates one 64³ volume per seed in
   `generate.seeds` (N = 128) and saves them as `models/<name>/<run>/volumes/*.tif` (0/255). It scores
   them against two 2D references: `train`, the image the model was trained on (Otsu map, SAM map for
   M3), and `common`, shared by all models of a dataset so that M2 vs M3 is a fair comparison (the exact
@@ -377,14 +387,15 @@ ground-truth mask). "Worse" means the 95 % bootstrap interval of the difference 
 | M1 + DiffAug | 0.0009 | 0.0045 |
 | M2 Swin + DiffAug | 0.0077 | 0.0093 (worse) |
 | M3 Swin + DiffAug, SAM map | 0.0328 (worse) | 0.0298 (worse) |
-| M4 CNN + frozen Swin | 0.0014 (φ exact) | 0.0039 (most stable training) |
+| M4 CNN + frozen Swin | 0.0014 | 0.0039 |
 | M5 M1 + Swin fine-tune | 0.0097 | 0.0013 |
 | M1 extended | 0.0059 | 0.0020 |
 
 - **RQ1:** a Swin-T critic is not better than the CNN critic. It needs DiffAug to train at all. On MicroLib its
   two runs bracket the CNN's; its single synthetic run is significantly worse and less isotropic.
 - **RQ2:** zero-shot SAM segments this kind of high-contrast image worse than Otsu (it dilates every particle by
-  about 1 px), and M3 inherits that bias.
+  about 1 px), and M3 inherits that bias. On the `synthetic_sam` label probe, where a global threshold fails
+  (illumination ramp), SAM with local-contrast labeling reaches IoU 0.93 against 0.43 for Otsu.
 - **RQ3:** the CNN + frozen Swin-T ensemble (M4) matches SliceGAN, with no measurable gain. Swin
   fine-tuning (M5) is not distinguishable from training the CNN for the same extra steps, and a Swin branch
   at 128 px (`configs/m4_ensemble_swin128.yaml`) did not help either.
@@ -393,6 +404,8 @@ ground-truth mask). "Worse" means the 95 % bootstrap interval of the difference 
   from each other (M2: S₂ MAE 0.0077 vs 0.0017), so single-run rankings are not reliable.
 - No model is significantly better than M1. Random volumes with the correct φ score 0.042, so all
   models except M3 sit an order of magnitude below that floor.
+- **Cost** (report §5.8, `make cost`): all models share the 40.1 M-parameter generator (14 ms per 64³ volume on
+  the GPU); the critic sets the training cost (M1 27 min, M4 98 min, M2/M3 about 163 min on an RTX A2000).
 
 ## References
 
@@ -401,9 +414,8 @@ ground-truth mask). "Worse" means the 95 % bootstrap interval of the difference 
   Code: https://github.com/stke9/SliceGAN
 - Z. Liu et al. *Swin Transformer: Hierarchical Vision Transformer using Shifted Windows.* ICCV 2021.
 - A. Kirillov et al. *Segment Anything.* ICCV 2023.
-- A. Dosovitskiy et al. *An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale.* ICLR 2021.
 - S. Kench et al. *MicroLib: A library of 3D microstructures generated from 2D micrographs using
-  SliceGAN.* Scientific Data, 2022 (if MicroLib is used).
+  SliceGAN.* Scientific Data, 2022.
 
 ## License
 

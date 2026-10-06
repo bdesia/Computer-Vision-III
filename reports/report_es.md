@@ -2,7 +2,9 @@
 
 Vision Transformers — FIUBA. 
 
-Trabajo individual.
+Profesores: Esp. Abraham Rodriguez y Mg. Oksana Bokhonok
+
+Autor: Braian A. Desía (Trabajo individual).
 
 ## 1. Objetivo del proyecto
 
@@ -165,7 +167,7 @@ recortes reales de 64 × 64 de la imagen de entrenamiento se puntúan con un cr�
 
 **Stack.** Python 3.11, PyTorch 2.5.1 (CUDA 12.4), timm 1.0.11, Hugging Face `transformers` 4.46.3,
 NumPy/SciPy/scikit-image, entorno Poetry (`setup.sh`), configuraciones YAML con herencia y superposición
-por dataset, logging a archivo y consola, seguimiento de experimentos con MLflow, 88 tests de pytest.
+por dataset, logging a archivo y consola, seguimiento de experimentos con MLflow, 92 tests de pytest.
 Entrenado en una NVIDIA RTX A2000 (12 GB).
 
 **Modelos preentrenados.**

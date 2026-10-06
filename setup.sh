@@ -48,8 +48,8 @@ else
     poetry add "torch==$TORCH_VERSION" "torchvision==$TORCHVISION_VERSION" --source pytorch-cu124 --lock
 fi
 
-# Install exactly what the lock file specifies (main + dev groups)
-poetry sync --with dev
+# Install exactly what the lock file specifies (main, dev and app groups)
+poetry sync --with dev,app
 
 # Register the Jupyter kernel
 poetry run python -m ipykernel install --user --name="$PROJECT_NAME" --display-name "Python ($PROJECT_NAME)"
