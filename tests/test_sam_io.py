@@ -7,6 +7,7 @@ from src.features.sam_segment import (
     weighted_otsu,
     Mask,
     classify_groups,
+    classify_groups_local,
     generate_masks,
     gt_crop_origins,
     iou_dice,
@@ -78,6 +79,27 @@ def test_classify_groups_dark_matrix_bright_inclusions():
     masks = [Mask.from_full(_full(gray.shape, (0, 10, 0, 10))), Mask.from_full(_full(gray.shape, (12, 30, 0, 30)))]
     labels, _ = classify_groups(gray, masks, [[0], [1]])
     assert labels[:10, :10].all() and labels.sum() == 100
+
+
+def test_local_contrast_labels_both_ends_of_an_illumination_ramp():
+    """Bright discs on a ramp: the dark-side disc is darker than the bright-side matrix, so the global split
+    misses it, while each disc is brighter than its own surroundings (local rule)."""
+    shape = (40, 120)
+    ramp = np.linspace(0.0, 0.6, shape[1])[None, :].repeat(shape[0], axis=0)
+    gray = 0.2 + ramp
+    boxes = [(10, 20, 5, 15), (10, 20, 50, 60), (10, 20, 100, 110)]  # left, middle, right inclusions
+    for y0, y1, x0, x1 in boxes:
+        gray[y0:y1, x0:x1] += 0.3
+    masks = [Mask.from_full(_full(shape, b)) for b in boxes]
+    masks.append(Mask.from_full(_full(shape, (25, 40, 60, 120))))  # a matrix region on the bright side
+    groups = [[0], [1], [2], [3]]
+    global_labels, _ = classify_groups(gray, masks, groups)
+    local_labels, info = classify_groups_local(gray, masks, groups, ring_width=3)
+    assert not global_labels[10:20, 5:15].any()  # the global rule misses the dark-side inclusion
+    assert info["n_inclusion_groups"] == 3
+    for y0, y1, x0, x1 in boxes:
+        assert local_labels[y0:y1, x0:x1].all()
+    assert not local_labels[25:40, 60:120].any()  # matrix region stays matrix
 
 
 def test_generate_masks_with_fake_generator_maps_tile_offsets():

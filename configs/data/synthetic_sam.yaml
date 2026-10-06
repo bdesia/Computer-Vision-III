@@ -7,9 +7,10 @@
 #   - a thin dark rim around each disc.
 # The clean mask is saved as data/raw/synthetic_sam/micro_2d_gt.png and used only to score Otsu and SAM.
 # Usage: make data DATA=configs/data/synthetic_sam.yaml ; make sam DATA=configs/data/synthetic_sam.yaml
-# Probe result (vs the clean mask, phi 0.250): Otsu IoU 0.430, phi 0.467 | SAM pipeline IoU 0.455, phi 0.123.
-# SAM's masks are good (right half IoU 0.909) but the pipeline's global group-intensity rule labels the discs
-# on the dark half as matrix (left half IoU 0.019).
+# Probe result (vs the clean mask, phi 0.250):
+#   Otsu                          IoU 0.430, phi 0.467
+#   SAM, global rule (sam.classify: global, as for M3)   IoU 0.455, phi 0.123 (dark half missed: IoU 0.019)
+#   SAM, local contrast (sam.classify: local, below)     IoU 0.931, phi 0.257 (left 0.932 / right 0.930)
 data:
   name: synthetic_sam
   source: synthetic
@@ -21,3 +22,6 @@ data:
     noise_std_inclusion: 0.08
     rim_depth: 0.25
     rim_width: 1
+
+sam:
+  classify: local             # each mask group vs a ring around it; the global rule fails on the ramp

@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import yaml
 from PIL import Image
+from scipy.ndimage import binary_dilation
 from skimage.segmentation import find_boundaries
 
 from src.data.make_dataset import extract_crops, load_grayscale, save_png
@@ -188,6 +189,58 @@ def classify_groups(gray: np.ndarray, masks: list[Mask], groups: list[list[int]]
     return labels, info
 
 
+def classify_groups_local(gray: np.ndarray, masks: list[Mask], groups: list[list[int]],
+                          ring_width: int = 3) -> tuple[np.ndarray, dict]:
+    """Label map from merged masks by LOCAL contrast: robust to illumination gradients.
+
+    Each group is scored by its mean gray minus the mean of a ring of `ring_width` pixels just outside it, so a
+    slow background ramp cancels out. The ring is not restricted to uncovered pixels: SAM also returns
+    background masks around objects, which would otherwise leave the ring of an inclusion empty. Uncovered pixels form an extra
+    "matrix" entry with contrast 0 weighted by its area; contrasts are split by the same area-weighted Otsu as
+    the global rule, and the class on the far side from 0 (the matrix) is the inclusion phase. Groups with an
+    empty ring keep a contrast of 0 (matrix).
+    """
+    shape = gray.shape
+    group_masks = []
+    for g in groups:
+        canvas = np.zeros(shape, dtype=bool)
+        for i in g:
+            masks[i].paint(canvas)
+        group_masks.append(canvas)
+    covered = np.zeros(shape, dtype=bool)
+    for canvas in group_masks:
+        covered |= canvas
+
+    contrasts, areas = [], []
+    for canvas in group_masks:
+        rows, cols = np.flatnonzero(canvas.any(axis=1)), np.flatnonzero(canvas.any(axis=0))
+        y0, y1 = max(rows[0] - ring_width, 0), min(rows[-1] + ring_width + 1, shape[0])
+        x0, x1 = max(cols[0] - ring_width, 0), min(cols[-1] + ring_width + 1, shape[1])
+        m = canvas[y0:y1, x0:x1]
+        ring = binary_dilation(m, iterations=ring_width) & ~m
+        contrasts.append(float(gray[y0:y1, x0:x1][m].mean() - gray[y0:y1, x0:x1][ring].mean()) if ring.any() else 0.0)
+        areas.append(int(m.sum()))
+    info = {"n_groups": len(groups), "classify": "local", "ring_width": ring_width}
+    labels = np.zeros(shape, dtype=np.uint8)
+    if not groups:
+        log.warning("SAM produced no mask groups; label map is all matrix")
+        info.update(threshold=None, n_inclusion_groups=0)
+        return labels, info
+
+    values = np.array(contrasts + [0.0])  # uncovered pixels: matrix anchor at contrast 0
+    weights = np.array(areas + [max(int((~covered).sum()), 1)])
+    if np.ptp(values) < 1e-6:
+        info.update(threshold=None, n_inclusion_groups=0)
+        return labels, info
+    threshold = weighted_otsu(values, weights)
+    inclusion = (values[:-1] > threshold) if threshold >= 0 else (values[:-1] < threshold)
+    for is_inc, canvas in zip(inclusion, group_masks):
+        if is_inc:
+            labels[canvas] = 1
+    info.update(threshold=threshold, n_inclusion_groups=int(inclusion.sum()))
+    return labels, info
+
+
 # --------------------------------------------------------------------------- evaluation + I/O
 
 
@@ -355,7 +408,10 @@ def run(cfg: dict, generator=None) -> dict:
     generator = generator or build_generator(scfg["model_id"], cfg["device"])
     masks = generate_masks(gray, generator, scfg)
     groups = merge_masks(masks, scfg["merge_iou"])
-    labels, info = classify_groups(gray, masks, groups)
+    if scfg.get("classify", "global") == "local":
+        labels, info = classify_groups_local(gray, masks, groups, scfg.get("ring_width", 3))
+    else:
+        labels, info = classify_groups(gray, masks, groups)
 
     out_dir = Path(cfg["data"]["train_dirs"]["sam"])
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -373,6 +429,7 @@ def run(cfg: dict, generator=None) -> dict:
         "model_id": scfg["model_id"],
         "params": {k: scfg[k] for k in ("tile_size", "tile_overlap", "points_per_side",
                                         "pred_iou_thresh", "stability_score_thresh", "merge_iou")},
+        "classify": scfg.get("classify", "global"),
         "n_masks": len(masks),
         **info,
         "phi_train": float(labels.mean()),
@@ -404,9 +461,13 @@ def main() -> None:
     parser.add_argument("--data", action="append", default=[], help="dataset overlay yaml")
     parser.add_argument("--reference-only", action="store_true",
                         help="only recompute IoU/Dice vs the references from the saved label maps")
+    parser.add_argument("--classify", choices=("global", "local"),
+                        help="override sam.classify: global gray-level split (default) or local contrast")
     args = parser.parse_args()
 
     cfg = load_config(args.config, args.data)
+    if args.classify:
+        cfg["sam"]["classify"] = args.classify
     setup_logging(cfg["paths"]["logs"], "sam_segment", cfg["logging"]["level"])
     set_seed(cfg["seed"])
     try:

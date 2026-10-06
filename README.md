@@ -43,7 +43,7 @@ src/models/         SliceGAN wrapper, CNN / Swin critics, DiffAug, train.py, gen
 src/visualization/  figures, metrics.csv, comparison vs M1, viewer export, app data helpers, report PDF
 app/                streamlit_app.py — interactive explorer (make app)
 src/tracking.py     optional MLflow tracking and backfill of finished runs
-tests/              pytest (90 tests)
+tests/              pytest (91 tests)
 notebooks/          00_eda.ipynb — training images, Otsu vs SAM, crop statistics, 2D descriptors
 reports/            report.md / report_es.md (+ PDFs), figures/, metrics*.csv, comparison_vs_m1_*.csv,
                     probes/ and runs/ (per-epoch selection logs), viewer/ (interactive volume viewer)

@@ -110,6 +110,8 @@ sam:
   pred_iou_thresh: 0.80
   stability_score_thresh: 0.85
   merge_iou: 0.3        # masks with IoU > 0.3 are merged before the intensity rule
+  classify: global      # global: one gray-level split of group means (M3 results) | local: group vs a ring
+  ring_width: 3         #   around it (robust to illumination ramps; see configs/data/synthetic_sam.yaml)
   n_gt_crops: 5
   gt_dir: data/processed/{data_name}/sam_gt
 

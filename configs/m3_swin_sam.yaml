@@ -17,7 +17,6 @@ train:
   diffaug:
     policy: [translation, cutout, d4]
 
-# Future M3-style run on the synthetic_sam label probe (not created; SAM wins the probe only narrowly:
-# IoU 0.455 vs Otsu 0.430, SAM map phi 0.12 vs true 0.25, because the global group-intensity rule misses the
-# dark half of the ramp; fix that rule first):
+# Future M3-style run on the synthetic_sam label probe (not created). SAM with local-contrast labeling wins
+# the probe (IoU 0.931 vs Otsu 0.430, phi 0.257 vs true 0.250); the overlay sets sam.classify: local:
 # make sam DATA=configs/data/synthetic_sam.yaml && make train-m3 DATA=configs/data/synthetic_sam.yaml
