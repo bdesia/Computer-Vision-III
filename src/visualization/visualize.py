@@ -377,6 +377,68 @@ def plot_pipeline(path: str | Path) -> None:
     plt.close(fig)
 
 
+def plot_m4_objective(path: str | Path) -> None:
+    """Training objective of the M4 / M5 ensemble: two critics with their own losses, summed in the G loss."""
+    fig, ax = plt.subplots(figsize=(13, 6.2))
+    ax.set_xlim(0, 13), ax.set_ylim(0, 6.2)
+    ax.axis("off")
+    blue, gold = MODEL_STYLE["m1_cnn"]["color"], MODEL_STYLE["m4_ensemble"]["color"]
+
+    def box(x, y, w, h, text, edge=INK_MUTED, face="#f4f3ee", bold=False, size=9):
+        ax.add_patch(FancyBboxPatch((x, y), w, h, boxstyle="round,pad=0.02,rounding_size=0.08",
+                                    facecolor=face, edgecolor=edge, linewidth=1.3))
+        ax.text(x + w / 2, y + h / 2, text, ha="center", va="center", fontsize=size, color=INK,
+                fontweight="bold" if bold else "normal")
+
+    def arrow(p, q, color=INK_MUTED, style="-", text=None, dy=0.12):
+        ax.add_patch(FancyArrowPatch(p, q, arrowstyle="-|>", mutation_scale=12, color=color, linewidth=1.2,
+                                     linestyle=style))
+        if text:
+            ax.text((p[0] + q[0]) / 2, (p[1] + q[1]) / 2 + dy, text, ha="center", fontsize=8, color=color)
+
+    # inputs
+    box(0.2, 3.65, 2.1, 1.1, r"generated slices $\tilde{x}$" "\n(all 64 per axis, x/y/z)", bold=True)
+    box(0.2, 1.55, 2.1, 1.1, "real 64×64 crops $x$\n(rot90 / flip)", bold=True)
+    # CNN branch
+    box(3.2, 4.15, 2.6, 1.2, "CNN critic $D_{cnn}$\n2.8 M parameters, all trained\n(M1's critic, no DiffAug)", edge=blue)
+    # Swin branch
+    box(3.2, 1.05, 1.25, 1.2, "DiffAug $T$\ntranslation,\ncutout, D4", edge=gold, size=8.5)
+    box(4.65, 1.05, 2.05, 1.2, "frozen Swin-T\n27.5 M (no gradients)\n+ per-position heads\nstages 2-4, 0.18 M", edge=gold, size=8.5)
+    for y in (4.2, 2.1):
+        arrow((2.3, y), (3.2, 4.7 if y > 3 else 1.65))
+    arrow((2.3, 4.0), (3.2, 1.9))
+    arrow((2.3, 2.3), (3.2, 4.4))
+    arrow((4.45, 1.65), (4.65, 1.65), gold)
+    # critic losses
+    box(7.3, 4.15, 5.5, 1.2, r"$\mathcal{L}_{cnn} = \mathbb{E}[D_{cnn}(\tilde{x})] - \mathbb{E}[D_{cnn}(x)]"
+        r" + \lambda_{GP}\,\mathbb{E}[(\|\nabla D_{cnn}(x_\epsilon)\|_2 - 1)^2]$" "\n"
+        r"WGAN-GP, $\lambda_{GP} = 10$, $x_\epsilon = \epsilon x + (1-\epsilon)\tilde{x}$; Adam, lr $10^{-4}$",
+        edge=blue, size=9)
+    box(7.3, 1.05, 5.5, 1.2, r"$\mathcal{L}_{swin} = \frac{1}{3}\sum_{s=2}^{4} \mathbb{E}[\max(0, 1 - D_s(T(x)))]"
+        r" + \mathbb{E}[\max(0, 1 + D_s(T(\tilde{x})))]$" "\n"
+        r"hinge per scale $s$ (no gradient penalty); Adam, lr $10^{-4}$", edge=gold, size=9)
+    arrow((5.8, 4.75), (7.3, 4.75), blue, text="scores")
+    arrow((6.7, 1.65), (7.3, 1.65), gold, text="scores")
+    # generator loss
+    box(3.2, 2.65, 9.6, 1.05, r"$\mathcal{L}_G = -\,\mathbb{E}[D_{cnn}(\tilde{x})]\; -\; \lambda\,"
+        r"\mathbb{E}[D_{swin}(T(\tilde{x}))]$,   $\lambda = 1$   (scores averaged over slices and the 3 scales)",
+        bold=True, size=10)
+    arrow((4.5, 4.15), (4.5, 3.7), blue)
+    arrow((5.7, 2.25), (5.7, 2.65), gold)
+    ax.text(10.05, 3.88, "each critic is updated only by its own loss (separate optimizers, 5 critic steps per G step)",
+            ha="center", fontsize=8, color=INK_MUTED)
+    ax.text(5.95, 2.43, "G is updated through both critics; the frozen Swin backbone passes gradients to G "
+            "but its weights never change", ha="left", fontsize=8, color=INK_MUTED)
+    ax.text(6.5, 0.45, "M4: generator trained from scratch with this objective.   M5: same objective, generator "
+            "initialised from M1's checkpoint and trained 20 more epochs.", ha="center", fontsize=8.5, color=INK)
+    ax.text(6.5, 5.85, "M4 / M5 training objective: CNN critic (WGAN-GP) + frozen Swin-T critic (hinge), summed in the "
+            "generator loss", ha="center", fontsize=11, color=INK, fontweight="bold")
+    fig.tight_layout()
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
 # --------------------------------------------------------------------------- CLI
 
 
@@ -404,6 +466,7 @@ def main() -> None:
         plot_training_curves(run_dirs, dataset, fig_dir / f"{dataset}_training.png")
         plot_qualitative_panel(cfgs, fig_dir / f"{dataset}_qualitative.png")
         plot_pipeline(fig_dir / "pipeline.png")
+        plot_m4_objective(fig_dir / "m4_objective.png")
     except (FileNotFoundError, KeyError, IndexError) as exc:
         log.exception("Visualization failed: %s", exc)
         raise SystemExit(1) from exc

@@ -50,8 +50,8 @@ al., 2017), in which D is an unbounded *critic* estimating the Wasserstein dista
 generated slices, with 5 critic updates per generator update. Using a WGAN means that this distance is only
 valid if the critic is a 1-Lipschitz function (gradient norm with respect to the input ≤ 1). Instead of
 clipping the weights as the original WGAN does, the GP enforces the constraint softly: a random
-interpolation between a real slice x and a generated one x̃, x̂ = εx + (1−ε)x̃ with ε ~ U[0, 1], is
-taken, and the term λ(‖∇D(x̂)‖₂ − 1)², with λ = 10, is added to the critic loss. The discriminator sees all
+interpolation between a real slice x and a generated one x̃, x_ε = εx + (1−ε)x̃ with ε ~ U[0, 1], is
+taken, and the term λ(‖∇D(x_ε)‖₂ − 1)², with λ = 10, is added to the critic loss. The discriminator sees all
 64 slices per direction of every generated volume and uses a generator batch twice the critic batch
 (m_G = 2 m_D), which the authors found most efficient.
 
@@ -152,6 +152,11 @@ and real 64 × 64 crops of the training image are scored by a 2D critic:
 | M4 | Otsu | SliceGAN CNN **+** frozen Swin-T with per-scale heads (ensemble) | CNN: WGAN-GP, Swin: hinge | 2.8 M + 0.18 M |
 | M5 | Otsu | as M4, generator initialised from M1's best checkpoint | as M4 | as M4 |
 | M1-ext | Otsu | as M1, generator initialised from M1's best checkpoint | WGAN-GP | 2.8 M |
+
+M4 and M5 train two critics at once, each with its own loss and optimizer; the generator loss adds both
+scores with equal weight (λ = 1):
+
+![M4 / M5 training objective](figures/m4_objective.png)
 
 **Metrics.** For each model, 128 64³ volumes (seeds 0–127) are compared with the 2D image through φ,
 S₂(r) and L(r), overall and per slice orientation, with bootstrap confidence intervals (Section 4).
@@ -290,8 +295,12 @@ All errors are far below the random-volume floor (S₂ MAE 0.042, L MAE 0.077). 
 (M1, M1 + DiffAug, M4) form the best group: their point estimates are the lowest and their intervals
 overlap. In this run M4, the CNN + frozen-Swin ensemble, reproduces the phase fraction exactly (0.232) and
 needed no checkpoint selection (its best epoch is its last); a second run (Section 5.7) does not repeat
-either property. No model is significantly better than M1 with 128 test volumes; M3 is significantly worse, because its training image (the SAM map) has a lower phase fraction
-and different morphology than the Otsu reference, and its last checkpoint undershoots φ further.
+either property. No model is significantly better than M1 with 128 test volumes; M3 is significantly worse against the Otsu reference, but that row mixes two effects. Its target is
+shifted: the SAM map it was trained on has φ = 0.217, not 0.232, so 0.015 of its |Δφ| = 0.058 is the
+front-end. The other 0.043 is the generator undershooting its own target (φ 0.174 vs 0.217; S₂ MAE 0.024 against
+the SAM map), within the run-to-run spread of the Swin critic it shares with M2 (Section 5.7). On the synthetic
+data, where the same model reproduces its own map almost exactly (|Δφ| 0.001, S₂ MAE 0.003; Section 5.6), the
+whole gap to the ground truth comes from the front-end.
 
 ![Descriptor curves](figures/microlib_000210_descriptors.png)
 
@@ -551,10 +560,16 @@ backward ≈ 3× forward; gradient penalty and DiffAug not included).
 **Answers to the project questions** (two datasets, 128 test volumes per model, bootstrap intervals; two
 training runs of M1, M2 and M4 on MicroLib):
 
-- **RQ1 — Swin-T instead of the CNN critic: no.** Trained in SliceGAN's WGAN-GP setup, a Swin-T critic was
+- **RQ1 — Swin-T instead of the CNN critic: no gain in the regime tested.** The conclusion is about this use of
+  Swin-T, not about ViT critics in general: the backbone is pretrained on 224 px images with 7 × 7 windows, and
+  here it sees 64 px slices, so its last stages shrink to 4 × 4 and 2 × 2 windows, and only those stages are
+  trained. The linear probe already shows the frozen features separate real from generated slices better at
+  128 px (83 %) than at 64 px (73 %); the single 128 px run (Section 5.7, frozen backbone in M4) did not turn that
+  into better volumes, and a trainable Swin critic at 128–224 px was not tested. Trained in SliceGAN's WGAN-GP setup, a Swin-T critic was
   unstable in every configuration until DiffAug was added. With DiffAug it reaches the CNN's quality but not
   more: on MicroLib its two runs bracket the CNN's (no significant difference in either), and the single
-  synthetic run is significantly worse on S₂ and L (also against the M1 + DiffAug ablation) and less isotropic.
+  synthetic run is significantly worse on S₂ and L (also against the M1 + DiffAug ablation) and less isotropic,
+  a failure mode of some runs rather than a property of the critic (the second MicroLib run is isotropic).
   Standard ViT-GAN stabilizers (lower learning rate, improved spectral norm, Adam β₁ = 0,
   generator EMA, a smaller trainable part) did not remove the instability; a frozen Swin critic cannot be
   trained with WGAN-GP at all (the gradient penalty dominates) and, with a hinge loss, does not control φ.
@@ -575,8 +590,9 @@ training runs of M1, M2 and M4 on MicroLib):
   the frozen Swin global texture. Moving the Swin branch to 128 px did not help. Used as a fine-tuning stage of a converged
   SliceGAN (M5), the Swin critic gives no gain over training the CNN alone for the same extra steps.
 
-**Overall.** SliceGAN's small CNN critic is hard to beat on two-phase 64³ microstructures. A Swin-T critic,
-alone (with DiffAug) or next to the CNN, reaches the same quality but not better; used alone it is harder to
+**Overall.** SliceGAN's small CNN critic is hard to beat on two-phase 64³ microstructures. A Swin-T critic used
+on 64 px slices, far from its 224 px pretraining regime, alone (with DiffAug) or next to the CNN, reaches the
+same quality but not better; used alone it is harder to
 train and sometimes produces anisotropic volumes, while next to the CNN (a 0.18 M-parameter head on a frozen
 backbone) it trains as reliably as the baseline. The second lesson is methodological and probably the most
 transferable: single 64³ volumes are noisy samples (φ ±0.05), the same model trained twice can differ by a

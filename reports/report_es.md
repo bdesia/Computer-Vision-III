@@ -54,8 +54,8 @@ y generadas, con 5 actualizaciones del crítico por cada actualización del gene
 que esa distancia sólo es válida si el crítico es una función
 1-Lipschitz (norma del gradiente respecto de la entrada ≤ 1). En lugar de recortar los pesos como la WGAN
 original, la GP impone la restricción de forma suave: se interpola al azar entre una rebanada real x y una
-generada x̃, x̂ = εx + (1−ε)x̃ con ε ~ U[0, 1], y se suma a la pérdida del crítico el término
-λ(‖∇D(x̂)‖₂ − 1)², con λ = 10. El discriminador ve las 64 rebanadas por dirección de cada volumen generado y usa un lote del generador
+generada x̃, x_ε = εx + (1−ε)x̃ con ε ~ U[0, 1], y se suma a la pérdida del crítico el término
+λ(‖∇D(x_ε)‖₂ − 1)², con λ = 10. El discriminador ve las 64 rebanadas por dirección de cada volumen generado y usa un lote del generador
 del doble del lote del crítico (m_G = 2 m_D), configuración que los autores encontraron más eficiente.
 
 **Diseño del generador: densidad de información uniforme.** Las primeras versiones de SliceGAN producían
@@ -159,6 +159,11 @@ recortes reales de 64 × 64 de la imagen de entrenamiento se puntúan con un cr�
 | M4 | Otsu | CNN de SliceGAN **+** Swin-T congelado con cabezas por escala (ensamble) | CNN: WGAN-GP, Swin: hinge | 2,8 M + 0,18 M |
 | M5 | Otsu | como M4, generador inicializado desde el mejor checkpoint de M1 | como M4 | como M4 |
 | M1-ext | Otsu | como M1, generador inicializado desde el mejor checkpoint de M1 | WGAN-GP | 2,8 M |
+
+M4 y M5 entrenan dos críticos a la vez, cada uno con su propia pérdida y su propio optimizador; la pérdida del
+generador suma ambos puntajes con el mismo peso (λ = 1):
+
+![Objetivo de entrenamiento de M4 / M5](figures/m4_objective.png)
 
 **Métricas.** Para cada modelo, 128 volúmenes de 64³ (semillas 0–127) se comparan con la imagen 2D mediante
 φ, S₂(r) y L(r), en total y por orientación de corte, con intervalos de confianza bootstrap (Sección 4).
@@ -312,9 +317,13 @@ modelos basados en CNN (M1, M1 + DiffAug, M4) forman el mejor grupo: sus estimac
 bajas y sus intervalos se superponen. En esta corrida M4, el ensamble CNN + Swin congelado, reproduce
 exactamente la fracción de fase (0,232) y no necesitó selección de checkpoint (su mejor época es la última);
 una segunda corrida (Sección 5.7) no repite ninguna de las dos propiedades. Ningún modelo
-es significativamente mejor que M1 con 128 volúmenes de prueba; M3 es significativamente peor, porque su
-imagen de entrenamiento (el mapa de SAM) tiene menor fracción de fase y distinta morfología que la
-referencia de Otsu, y su último checkpoint subestima φ aún más.
+es significativamente mejor que M1 con 128 volúmenes de prueba; M3 es significativamente peor frente a la
+referencia de Otsu, pero esa fila mezcla dos efectos. Su objetivo está corrido: el mapa de SAM con el que se
+entrenó tiene φ = 0,217, no 0,232, así que 0,015 de su |Δφ| = 0,058 corresponde a la segmentación. Los otros
+0,043 son el generador quedándose corto respecto de su propio objetivo (φ 0,174 frente a 0,217; S₂ MAE 0,024
+frente al mapa de SAM), dentro de la dispersión entre corridas del crítico Swin que comparte con M2 (Sección
+5.7). En los datos sintéticos, donde el mismo modelo reproduce casi exactamente su propio mapa (|Δφ| 0,001,
+S₂ MAE 0,003; Sección 5.6), toda la diferencia con la referencia exacta proviene de la segmentación.
 
 ![Curvas de descriptores](figures/microlib_000210_descriptors.png)
 
@@ -598,11 +607,18 @@ de gradiente ni DiffAug).
 **Respuestas a las preguntas del proyecto** (dos datasets, 128 volúmenes de prueba por modelo,
 intervalos bootstrap; dos corridas de entrenamiento de M1, M2 y M4 en MicroLib):
 
-- **PI1 — Swin-T en lugar del crítico CNN: no.** Entrenado con la configuración WGAN-GP de SliceGAN, un
+- **PI1 — Swin-T en lugar del crítico CNN: sin mejora en el régimen probado.** La conclusión es sobre este uso
+  de Swin-T, no sobre los críticos ViT en general: el backbone está preentrenado con imágenes de 224 px y
+  ventanas de 7 × 7, y aquí ve rebanadas de 64 px, por lo que sus últimas etapas reducen las ventanas a 4 × 4 y
+  2 × 2, y solo esas etapas se entrenan. La sonda lineal ya muestra que las características congeladas separan
+  rebanadas reales de generadas mejor a 128 px (83 %) que a 64 px (73 %); la única corrida a 128 px (Sección
+  5.7, backbone congelado en M4) no lo tradujo en mejores volúmenes, y no se probó un crítico Swin entrenable a
+  128–224 px. Entrenado con la configuración WGAN-GP de SliceGAN, un
   crítico Swin-T fue inestable en todas las configuraciones hasta que se agregó DiffAug. Con DiffAug alcanza
   la calidad de la CNN, pero no más: en MicroLib sus dos corridas encierran a las de la CNN (sin diferencia
   significativa en ninguna), y la única corrida sintética es significativamente peor en S₂ y L (también
-  frente a la ablación M1 + DiffAug) y menos isótropa. Los estabilizadores habituales de ViT-GAN
+  frente a la ablación M1 + DiffAug) y menos isótropa, un modo de falla de algunas corridas más que una
+  propiedad del crítico (la segunda corrida en MicroLib es isótropa). Los estabilizadores habituales de ViT-GAN
   (menor tasa de aprendizaje, spectral norm mejorada, Adam β₁ = 0, EMA del generador, menor parte entrenable)
   no eliminaron la inestabilidad; un crítico Swin congelado directamente no puede entrenarse con WGAN-GP (la
   penalización de gradiente domina) y, con pérdida hinge, no controla φ.
@@ -626,7 +642,8 @@ intervalos bootstrap; dos corridas de entrenamiento de M1, M2 y M4 en MicroLib):
   convergido (M5), el crítico Swin no mejora respecto de entrenar solo la CNN los mismos pasos adicionales.
 
 **En conjunto.** El pequeño crítico CNN de SliceGAN es difícil de superar en microestructuras de dos fases de
-64³. Un crítico Swin-T, solo (con DiffAug) o junto a la CNN, alcanza la misma calidad pero no una mejor; solo
+64³. Un crítico Swin-T usado sobre rebanadas de 64 px, lejos de su régimen de preentrenamiento de 224 px, solo
+(con DiffAug) o junto a la CNN, alcanza la misma calidad pero no una mejor; solo
 es más difícil de entrenar y a veces produce volúmenes anisótropos, mientras que junto a la CNN (una cabeza de
 0,18 M de parámetros sobre un backbone congelado) entrena de forma tan confiable como la línea base. La
 segunda lección es metodológica y probablemente la más transferible: un volumen de 64³ es una muestra ruidosa
