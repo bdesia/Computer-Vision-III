@@ -1,6 +1,10 @@
 # SliceGAN with Vision Transformer discriminators and a SAM front-end
 
-Vision Transformers — FIUBA. Individual work.
+Vision Transformers — FIUBA.
+
+Professors: Esp. Abraham Rodriguez and Mg. Oksana Bokhonok
+
+Author: Braian A. Desía (individual work).
 
 ## 1. Project goal
 
